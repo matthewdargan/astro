@@ -48,3 +48,7 @@ The `-t` flag causes astro to read ΔT. ΔT is the difference between
 ephemeris and universal time (seconds) due to the slowing of the earth’s
 rotation. ΔT is normally calculated from an empirical formula. This option is
 needed only for very accurate timing of occultations, eclipses, etc.
+
+Dasol Dargan designed the [cat image](doc/images/cats-telescope.png), licensed
+under Creative Commons Attribution 4.0, meaning you can use the image, but you
+must credit the creator.
