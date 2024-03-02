@@ -68,19 +68,16 @@ import (
 )
 
 const (
-	secondsPerDay       = 24 * 60 * 60
-	meanSolarDaySeconds = 0.001704
-	pipi                = 2 * math.Pi
-	radian              = math.Pi / 180
-	radsec              = radian / 3600
-	converge            = 1e-14
-	metersToFeet        = 3.28084
-	per                 = 1.0
-	npts                = 12
-	deld                = per / npts
-	maxe                = 0.999 // Can't do hyperbolas
-	nevents             = 100
-	dark                = 1 << iota
+	secondsPerDay = 24 * 60 * 60
+	twoPi         = 2 * math.Pi
+	radian        = math.Pi / 180
+	radsec        = radian / 3600
+	converge      = 1e-14
+	metersToFeet  = 3.28084
+	iVal          = 1.0
+	numPoints     = 12
+	stepSize      = iVal / numPoints
+	dark          = 1 << iota
 	signif
 	ptime
 	light
@@ -93,7 +90,7 @@ type obj1 struct {
 type obj2 struct {
 	name, fname string
 	f           func()
-	point       [npts + 2]obj1
+	point       [numPoints + 2]obj1
 }
 
 type obj3 struct {
@@ -116,19 +113,19 @@ type occt struct {
 }
 
 var (
-	julian    = flag.Bool("j", false, "print Julian date")
-	pflag     = flag.Bool("p", false, "print positions of objects at the given time")
-	oflag     = flag.Bool("o", false, "search for stellar occultations")
-	local     = flag.Bool("k", false, "print times in local time")
-	mflag     = flag.Bool("m", false, "include single comet in the list of objects")
-	nperiods  = flag.Int("c", 1, "report for n successive days")
-	p         = flag.Float64("C", per, "used with -c, set the interval to d days")
-	startDate = flag.String("d", "", "read start date")
-	eclipse   = flag.String("e", "", "report distance between the centers of objects")
-	initLoc   = flag.String("l", "", "read latitude, longitude, and elevation")
-	dt        = flag.Float64("t", 0, "read ΔT")
+	julian       = flag.Bool("j", false, "print Julian date")
+	printPos     = flag.Bool("p", false, "print positions of objects at the given time")
+	searchOccult = flag.Bool("o", false, "search for stellar occultations")
+	local        = flag.Bool("k", false, "print times in local time")
+	includeComet = flag.Bool("m", false, "include single comet in the list of objects")
+	periods      = flag.Int("c", 1, "report for n successive days")
+	interval     = flag.Float64("C", iVal, "used with -c, set the interval to d days")
+	startDate    = flag.String("d", "", "read start date")
+	eclipse      = flag.String("e", "", "report distance between the centers of objects")
+	initLoc      = flag.String("l", "", "read latitude, longitude, and elevation")
+	dt           = flag.Float64("t", 0, "read ΔT")
 
-	root string
+	root = os.Getenv("PLAN9")
 	wlong, awlong, nlat, elev,
 	obliq, phi, eps, tobliq,
 	dphi, deps,
@@ -163,290 +160,295 @@ var (
 	ostar      obj2
 	occ        obj3
 	occ1, occ2 occt
-	moontab    = []moonTab{
-		{f: 0.127, c: [4]int{0, 0, 0, 6}},
-		{f: 13.902, c: [4]int{0, 0, 0, 4}},
-		{f: 2369.912, c: [4]int{0, 0, 0, 2}},
-		{f: 1.979, c: [4]int{1, 0, 0, 4}},
-		{f: 191.953, c: [4]int{1, 0, 0, 2}},
-		{f: 22639.5, c: [4]int{1, 0, 0, 0}},
-		{f: -4586.465, c: [4]int{1, 0, 0, -2}},
-		{f: -38.428, c: [4]int{1, 0, 0, -4}},
-		{f: -0.393, c: [4]int{1, 0, 0, -6}},
-		{f: -0.289, c: [4]int{0, 1, 0, 4}},
-		{f: -24.42, c: [4]int{0, 1, 0, 2}},
-		{f: -668.146, c: [4]int{0, 1, 0, 0}},
-		{f: -165.145, c: [4]int{0, 1, 0, -2}},
-		{f: -1.877, c: [4]int{0, 1, 0, -4}},
-		{f: 0.403, c: [4]int{0, 0, 0, 3}},
-		{f: -125.154, c: [4]int{0, 0, 0, 1}},
-		{f: 0.213, c: [4]int{2, 0, 0, 4}},
-		{f: 14.387, c: [4]int{2, 0, 0, 2}},
-		{f: 769.016, c: [4]int{2, 0, 0, 0}},
-		{f: -211.656, c: [4]int{2, 0, 0, -2}},
-		{f: -30.773, c: [4]int{2, 0, 0, -4}},
-		{f: -0.57, c: [4]int{2, 0, 0, -6}},
-		{f: -2.921, c: [4]int{1, 1, 0, 2}},
-		{f: -109.673, c: [4]int{1, 1, 0, 0}},
-		{f: -205.962, c: [4]int{1, 1, 0, -2}},
-		{f: -4.391, c: [4]int{1, 1, 0, -4}},
-		{f: -0.072, c: [4]int{1, 1, 0, -6}},
-		{f: 0.283, c: [4]int{1, -1, 0, 4}},
-		{f: 14.577, c: [4]int{1, -1, 0, 2}},
-		{f: 147.687, c: [4]int{1, -1, 0, 0}},
-		{f: 28.475, c: [4]int{1, -1, 0, -2}},
-		{f: 0.636, c: [4]int{1, -1, 0, -4}},
-		{f: -0.189, c: [4]int{0, 2, 0, 2}},
-		{f: -7.486, c: [4]int{0, 2, 0, 0}},
-		{f: -8.096, c: [4]int{0, 2, 0, -2}},
-		{f: -0.151, c: [4]int{0, 2, 0, -4}},
-		{f: -0.085, c: [4]int{0, 0, 2, 4}},
-		{f: -5.741, c: [4]int{0, 0, 2, 2}},
-		{f: -411.608, c: [4]int{0, 0, 2, 0}},
-		{f: -55.173, c: [4]int{0, 0, 2, -2}},
-		{f: -8.466, c: [4]int{1, 0, 0, 1}},
-		{f: 18.609, c: [4]int{1, 0, 0, -1}},
-		{f: 3.215, c: [4]int{1, 0, 0, -3}},
-		{f: 0.15, c: [4]int{0, 1, 0, 3}},
-		{f: 18.023, c: [4]int{0, 1, 0, 1}},
-		{f: 0.56, c: [4]int{0, 1, 0, -1}},
-		{f: 1.06, c: [4]int{3, 0, 0, 2}},
-		{f: 36.124, c: [4]int{3, 0, 0, 0}},
-		{f: -13.193, c: [4]int{3, 0, 0, -2}},
-		{f: -1.187, c: [4]int{3, 0, 0, -4}},
-		{f: -0.293, c: [4]int{3, 0, 0, -6}},
-		{f: -0.29, c: [4]int{2, 1, 0, 2}},
-		{f: -7.649, c: [4]int{2, 1, 0, 0}},
-		{f: -8.627, c: [4]int{2, 1, 0, -2}},
-		{f: -2.74, c: [4]int{2, 1, 0, -4}},
-		{f: -0.091, c: [4]int{2, 1, 0, -6}},
-		{f: 1.181, c: [4]int{2, -1, 0, 2}},
-		{f: 9.703, c: [4]int{2, -1, 0, 0}},
-		{f: -2.494, c: [4]int{2, -1, 0, -2}},
-		{f: 0.36, c: [4]int{2, -1, 0, -4}},
-		{f: -1.167, c: [4]int{1, 2, 0, 0}},
-		{f: -7.412, c: [4]int{1, 2, 0, -2}},
-		{f: -0.311, c: [4]int{1, 2, 0, -4}},
-		{f: 0.757, c: [4]int{1, -2, 0, 2}},
-		{f: 2.58, c: [4]int{1, -2, 0, 0}},
-		{f: 2.533, c: [4]int{1, -2, 0, -2}},
-		{f: -0.103, c: [4]int{0, 3, 0, 0}},
-		{f: -0.344, c: [4]int{0, 3, 0, -2}},
-		{f: -0.992, c: [4]int{1, 0, 2, 2}},
-		{f: -45.099, c: [4]int{1, 0, 2, 0}},
-		{f: -0.179, c: [4]int{1, 0, 2, -2}},
-		{f: -0.301, c: [4]int{1, 0, 2, -4}},
-		{f: -6.382, c: [4]int{1, 0, -2, 2}},
-		{f: 39.528, c: [4]int{1, 0, -2, 0}},
-		{f: 9.366, c: [4]int{1, 0, -2, -2}},
-		{f: 0.202, c: [4]int{1, 0, -2, -4}},
-		{f: 0.415, c: [4]int{0, 1, 2, 0}},
-		{f: -2.152, c: [4]int{0, 1, 2, -2}},
-		{f: -1.44, c: [4]int{0, 1, -2, 2}},
-		{f: 0.076, c: [4]int{0, 1, -2, 0}},
-		{f: 0.384, c: [4]int{0, 1, -2, -2}},
-		{f: -0.586, c: [4]int{2, 0, 0, 1}},
-		{f: 1.75, c: [4]int{2, 0, 0, -1}},
-		{f: 1.225, c: [4]int{2, 0, 0, -3}},
-		{f: 1.267, c: [4]int{1, 1, 0, 1}},
-		{f: 0.137, c: [4]int{1, 1, 0, -1}},
-		{f: 0.233, c: [4]int{1, 1, 0, -3}},
-		{f: -0.122, c: [4]int{1, -1, 0, 1}},
-		{f: -1.089, c: [4]int{1, -1, 0, -1}},
-		{f: -0.276, c: [4]int{1, -1, 0, -3}},
-		{f: 0.255, c: [4]int{0, 0, 2, 1}},
-		{f: 0.584, c: [4]int{0, 0, 2, -1}},
-		{f: 0.254, c: [4]int{0, 0, 2, -3}},
-		{f: 0.07, c: [4]int{4, 0, 0, 2}},
-		{f: 1.938, c: [4]int{4, 0, 0, 0}},
-		{f: -0.952, c: [4]int{4, 0, 0, -2}},
-		{f: -0.551, c: [4]int{3, 1, 0, 0}},
-		{f: -0.482, c: [4]int{3, 1, 0, -2}},
-		{f: -0.1, c: [4]int{3, 1, 0, -4}},
-		{f: 0.088, c: [4]int{3, -1, 0, 2}},
-		{f: 0.681, c: [4]int{3, -1, 0, 0}},
-		{f: -0.183, c: [4]int{3, -1, 0, -2}},
-		{f: -0.297, c: [4]int{2, 2, 0, -2}},
-		{f: -0.161, c: [4]int{2, 2, 0, -4}},
-		{f: 0.197, c: [4]int{2, -2, 0, 0}},
-		{f: 0.254, c: [4]int{2, -2, 0, -2}},
-		{f: -0.25, c: [4]int{1, 3, 0, -2}},
-		{f: -0.123, c: [4]int{2, 0, 2, 2}},
-		{f: -3.996, c: [4]int{2, 0, 2, 0}},
-		{f: 0.557, c: [4]int{2, 0, 2, -2}},
-		{f: -0.459, c: [4]int{2, 0, -2, 2}},
-		{f: -1.37, c: [4]int{2, 0, -2, 0}},
-		{f: 0.538, c: [4]int{2, 0, -2, -2}},
-		{f: 0.173, c: [4]int{2, 0, -2, -4}},
-		{f: 0.263, c: [4]int{1, 1, 2, 0}},
-		{f: 0.083, c: [4]int{1, 1, -2, 2}},
-		{f: -0.083, c: [4]int{1, 1, -2, 0}},
-		{f: 0.426, c: [4]int{1, 1, -2, -2}},
-		{f: -0.304, c: [4]int{1, -1, 2, 0}},
-		{f: -0.372, c: [4]int{1, -1, -2, 2}},
-		{f: 0.083, c: [4]int{1, -1, -2, 0}},
-		{f: 0.418, c: [4]int{0, 0, 4, 0}},
-		{f: 0.074, c: [4]int{0, 0, 4, -2}},
-		{f: 0.13, c: [4]int{3, 0, 0, -1}},
-		{f: 0.092, c: [4]int{2, 1, 0, 1}},
-		{f: 0.084, c: [4]int{2, 1, 0, -3}},
-		{f: -0.352, c: [4]int{2, -1, 0, -1}},
-		{f: 0.113, c: [4]int{5, 0, 0, 0}},
-		{f: -0.33, c: [4]int{3, 0, 2, 0}},
-		{f: 0.09, c: [4]int{1, 0, 4, 0}},
-		{f: -0.08, c: [4]int{1, 0, -4, 0}},
-		{},
-		{f: -112.79, c: [4]int{0, 0, 0, 1}},
-		{f: 2373.36, c: [4]int{0, 0, 0, 2}},
-		{f: -4.01, c: [4]int{0, 0, 0, 3}},
-		{f: 14.06, c: [4]int{0, 0, 0, 4}},
-		{f: 6.98, c: [4]int{1, 0, 0, 4}},
-		{f: 192.72, c: [4]int{1, 0, 0, 2}},
-		{f: -13.51, c: [4]int{1, 0, 0, 1}},
-		{f: 22609.07, c: [4]int{1, 0, 0, 0}},
-		{f: 3.59, c: [4]int{1, 0, 0, -1}},
-		{f: -4578.13, c: [4]int{1, 0, 0, -2}},
-		{f: 5.44, c: [4]int{1, 0, 0, -3}},
-		{f: -38.64, c: [4]int{1, 0, 0, -4}},
-		{f: 14.78, c: [4]int{2, 0, 0, 2}},
-		{f: 767.96, c: [4]int{2, 0, 0, 0}},
-		{f: 2.01, c: [4]int{2, 0, 0, -1}},
-		{f: -152.53, c: [4]int{2, 0, 0, -2}},
-		{f: -34.07, c: [4]int{2, 0, 0, -4}},
-		{f: 2.96, c: [4]int{3, 0, 0, 2}},
-		{f: 50.64, c: [4]int{3, 0, 0, 0}},
-		{f: -16.4, c: [4]int{3, 0, 0, -2}},
-		{f: 3.6, c: [4]int{4, 0, 0, 0}},
-		{f: -1.58, c: [4]int{4, 0, 0, -2}},
-		{f: -1.59, c: [4]int{0, 1, 0, 4}},
-		{f: -25.1, c: [4]int{0, 1, 0, 2}},
-		{f: 17.93, c: [4]int{0, 1, 0, 1}},
-		{f: -126.98, c: [4]int{0, 1, 0, 0}},
-		{f: -165.06, c: [4]int{0, 1, 0, -2}},
-		{f: -6.46, c: [4]int{0, 1, 0, -4}},
-		{f: -1.68, c: [4]int{0, 2, 0, 2}},
-		{f: -16.35, c: [4]int{0, 2, 0, -2}},
-		{f: -11.75, c: [4]int{1, 1, 0, 2}},
-		{f: 1.52, c: [4]int{1, 1, 0, 1}},
-		{f: -115.18, c: [4]int{1, 1, 0, 0}},
-		{f: -182.36, c: [4]int{1, 1, 0, -2}},
-		{f: -9.66, c: [4]int{1, 1, 0, -4}},
-		{f: -2.27, c: [4]int{-1, 1, 0, 4}},
-		{f: -23.59, c: [4]int{-1, 1, 0, 2}},
-		{f: -138.76, c: [4]int{-1, 1, 0, 0}},
-		{f: -31.7, c: [4]int{-1, 1, 0, -2}},
-		{f: -1.53, c: [4]int{-1, 1, 0, -4}},
-		{f: -10.56, c: [4]int{2, 1, 0, 0}},
-		{f: -7.59, c: [4]int{2, 1, 0, -2}},
-		{f: -2.54, c: [4]int{2, 1, 0, -4}},
-		{f: 3.32, c: [4]int{2, -1, 0, 2}},
-		{f: 11.67, c: [4]int{2, -1, 0, 0}},
-		{f: -6.12, c: [4]int{1, 2, 0, -2}},
-		{f: -2.4, c: [4]int{-1, 2, 0, 2}},
-		{f: -2.32, c: [4]int{-1, 2, 0, 0}},
-		{f: -1.82, c: [4]int{-1, 2, 0, -2}},
-		{f: -52.14, c: [4]int{0, 0, 2, -2}},
-		{f: -1.67, c: [4]int{0, 0, 2, -4}},
-		{f: -9.52, c: [4]int{1, 0, 2, -2}},
-		{f: -85.13, c: [4]int{-1, 0, 2, 0}},
-		{f: 3.37, c: [4]int{-1, 0, 2, -2}},
-		{f: -2.26, c: [4]int{0, 1, 2, -2}},
-		{},
-		{f: -0.725, c: [4]int{0, 0, 0, 1}},
-		{f: 0.601, c: [4]int{0, 0, 0, 2}},
-		{f: 0.394, c: [4]int{0, 0, 0, 3}},
-		{f: -0.445, c: [4]int{1, 0, 0, 4}},
-		{f: 0.455, c: [4]int{1, 0, 0, 1}},
-		{f: 0.192, c: [4]int{1, 0, 0, -3}},
-		{f: 5.679, c: [4]int{2, 0, 0, -2}},
-		{f: -0.308, c: [4]int{2, 0, 0, -4}},
-		{f: -0.166, c: [4]int{3, 0, 0, 2}},
-		{f: -1.3, c: [4]int{3, 0, 0, 0}},
-		{f: 0.258, c: [4]int{3, 0, 0, -2}},
-		{f: -1.302, c: [4]int{0, 1, 0, 0}},
-		{f: -0.416, c: [4]int{0, 1, 0, -4}},
-		{f: -0.74, c: [4]int{0, 2, 0, -2}},
-		{f: 0.787, c: [4]int{1, 1, 0, 2}},
-		{f: 0.461, c: [4]int{1, 1, 0, 0}},
-		{f: 2.056, c: [4]int{1, 1, 0, -2}},
-		{f: -0.471, c: [4]int{1, 1, 0, -4}},
-		{f: -0.443, c: [4]int{-1, 1, 0, 2}},
-		{f: 0.679, c: [4]int{-1, 1, 0, 0}},
-		{f: -1.54, c: [4]int{-1, 1, 0, -2}},
-		{f: 0.259, c: [4]int{2, 1, 0, 0}},
-		{f: -0.212, c: [4]int{2, -1, 0, 2}},
-		{f: -0.151, c: [4]int{2, -1, 0, 0}},
-		{},
-		{f: -526.069, c: [4]int{0, 0, 1, -2}},
-		{f: -3.352, c: [4]int{0, 0, 1, -4}},
-		{f: 44.297, c: [4]int{1, 0, 1, -2}},
-		{f: -6, c: [4]int{1, 0, 1, -4}},
-		{f: 20.599, c: [4]int{-1, 0, 1, 0}},
-		{f: -30.598, c: [4]int{-1, 0, 1, -2}},
-		{f: -24.649, c: [4]int{-2, 0, 1, 0}},
-		{f: -2, c: [4]int{-2, 0, 1, -2}},
-		{f: -22.571, c: [4]int{0, 1, 1, -2}},
-		{f: 10.985, c: [4]int{0, -1, 1, -2}},
-		{},
-		{f: 0.2607, c: [4]int{0, 0, 0, 4}},
-		{f: 28.2333, c: [4]int{0, 0, 0, 2}},
-		{f: 0.0433, c: [4]int{1, 0, 0, 4}},
-		{f: 3.0861, c: [4]int{1, 0, 0, 2}},
-		{f: 186.5398, c: [4]int{1, 0, 0, 0}},
-		{f: 34.3117, c: [4]int{1, 0, 0, -2}},
-		{f: 0.6008, c: [4]int{1, 0, 0, -4}},
-		{f: -0.3, c: [4]int{0, 1, 0, 2}},
-		{f: -0.3997, c: [4]int{0, 1, 0, 0}},
-		{f: 1.9178, c: [4]int{0, 1, 0, -2}},
-		{f: 0.0339, c: [4]int{0, 1, 0, -4}},
-		{f: -0.9781, c: [4]int{0, 0, 0, 1}},
-		{f: 0.2833, c: [4]int{2, 0, 0, 2}},
-		{f: 10.1657, c: [4]int{2, 0, 0, 0}},
-		{f: -0.3039, c: [4]int{2, 0, 0, -2}},
-		{f: 0.3722, c: [4]int{2, 0, 0, -4}},
-		{f: 0.0109, c: [4]int{2, 0, 0, -6}},
-		{f: -0.0484, c: [4]int{1, 1, 0, 2}},
-		{f: -0.949, c: [4]int{1, 1, 0, 0}},
-		{f: 1.4437, c: [4]int{1, 1, 0, -2}},
-		{f: 0.0673, c: [4]int{1, 1, 0, -4}},
-		{f: 0.2302, c: [4]int{1, -1, 0, 2}},
-		{f: 1.1528, c: [4]int{1, -1, 0, 0}},
-		{f: -0.2257, c: [4]int{1, -1, 0, -2}},
-		{f: -0.0102, c: [4]int{1, -1, 0, -4}},
-		{f: 0.0918, c: [4]int{0, 2, 0, -2}},
-		{f: -0.0124, c: [4]int{0, 0, 2, 0}},
-		{f: -0.1052, c: [4]int{0, 0, 2, -2}},
-		{f: -0.1093, c: [4]int{1, 0, 0, 1}},
-		{f: 0.0118, c: [4]int{1, 0, 0, -1}},
-		{f: -0.0386, c: [4]int{1, 0, 0, -3}},
-		{f: 0.1494, c: [4]int{0, 1, 0, 1}},
-		{f: 0.0243, c: [4]int{3, 0, 0, 2}},
-		{f: 0.6215, c: [4]int{3, 0, 0, 0}},
-		{f: -0.1187, c: [4]int{3, 0, 0, -2}},
-		{f: -0.1038, c: [4]int{2, 1, 0, 0}},
-		{f: -0.0192, c: [4]int{2, 1, 0, -2}},
-		{f: 0.0324, c: [4]int{2, 1, 0, -4}},
-		{f: 0.0213, c: [4]int{2, -1, 0, 2}},
-		{f: 0.1268, c: [4]int{2, -1, 0, 0}},
-		{f: -0.0106, c: [4]int{1, 2, 0, 0}},
-		{f: 0.0484, c: [4]int{1, 2, 0, -2}},
-		{f: 0.0112, c: [4]int{1, -2, 0, 2}},
-		{f: 0.0196, c: [4]int{1, -2, 0, 0}},
-		{f: -0.0212, c: [4]int{1, -2, 0, -2}},
-		{f: -0.0833, c: [4]int{1, 0, 2, -2}},
-		{f: -0.0481, c: [4]int{1, 0, -2, 2}},
-		{f: -0.7136, c: [4]int{1, 0, -2, 0}},
-		{f: -0.0112, c: [4]int{1, 0, -2, -2}},
-		{f: -0.01, c: [4]int{2, 0, 0, 1}},
-		{f: 0.0155, c: [4]int{2, 0, 0, -1}},
-		{f: 0.0164, c: [4]int{1, 1, 0, 1}},
-		{f: 0.0401, c: [4]int{4, 0, 0, 0}},
-		{f: -0.013, c: [4]int{4, 0, 0, -2}},
-		{f: 0.0115, c: [4]int{3, -1, 0, 0}},
-		{f: -0.0141, c: [4]int{2, 0, -2, -2}},
-		{},
+	moonTabs   = [...][]moonTab{
+		{
+			{f: 0.127, c: [4]int{0, 0, 0, 6}},
+			{f: 13.902, c: [4]int{0, 0, 0, 4}},
+			{f: 2369.912, c: [4]int{0, 0, 0, 2}},
+			{f: 1.979, c: [4]int{1, 0, 0, 4}},
+			{f: 191.953, c: [4]int{1, 0, 0, 2}},
+			{f: 22639.5, c: [4]int{1, 0, 0, 0}},
+			{f: -4586.465, c: [4]int{1, 0, 0, -2}},
+			{f: -38.428, c: [4]int{1, 0, 0, -4}},
+			{f: -0.393, c: [4]int{1, 0, 0, -6}},
+			{f: -0.289, c: [4]int{0, 1, 0, 4}},
+			{f: -24.42, c: [4]int{0, 1, 0, 2}},
+			{f: -668.146, c: [4]int{0, 1, 0, 0}},
+			{f: -165.145, c: [4]int{0, 1, 0, -2}},
+			{f: -1.877, c: [4]int{0, 1, 0, -4}},
+			{f: 0.403, c: [4]int{0, 0, 0, 3}},
+			{f: -125.154, c: [4]int{0, 0, 0, 1}},
+			{f: 0.213, c: [4]int{2, 0, 0, 4}},
+			{f: 14.387, c: [4]int{2, 0, 0, 2}},
+			{f: 769.016, c: [4]int{2, 0, 0, 0}},
+			{f: -211.656, c: [4]int{2, 0, 0, -2}},
+			{f: -30.773, c: [4]int{2, 0, 0, -4}},
+			{f: -0.57, c: [4]int{2, 0, 0, -6}},
+			{f: -2.921, c: [4]int{1, 1, 0, 2}},
+			{f: -109.673, c: [4]int{1, 1, 0, 0}},
+			{f: -205.962, c: [4]int{1, 1, 0, -2}},
+			{f: -4.391, c: [4]int{1, 1, 0, -4}},
+			{f: -0.072, c: [4]int{1, 1, 0, -6}},
+			{f: 0.283, c: [4]int{1, -1, 0, 4}},
+			{f: 14.577, c: [4]int{1, -1, 0, 2}},
+			{f: 147.687, c: [4]int{1, -1, 0, 0}},
+			{f: 28.475, c: [4]int{1, -1, 0, -2}},
+			{f: 0.636, c: [4]int{1, -1, 0, -4}},
+			{f: -0.189, c: [4]int{0, 2, 0, 2}},
+			{f: -7.486, c: [4]int{0, 2, 0, 0}},
+			{f: -8.096, c: [4]int{0, 2, 0, -2}},
+			{f: -0.151, c: [4]int{0, 2, 0, -4}},
+			{f: -0.085, c: [4]int{0, 0, 2, 4}},
+			{f: -5.741, c: [4]int{0, 0, 2, 2}},
+			{f: -411.608, c: [4]int{0, 0, 2, 0}},
+			{f: -55.173, c: [4]int{0, 0, 2, -2}},
+			{f: -8.466, c: [4]int{1, 0, 0, 1}},
+			{f: 18.609, c: [4]int{1, 0, 0, -1}},
+			{f: 3.215, c: [4]int{1, 0, 0, -3}},
+			{f: 0.15, c: [4]int{0, 1, 0, 3}},
+			{f: 18.023, c: [4]int{0, 1, 0, 1}},
+			{f: 0.56, c: [4]int{0, 1, 0, -1}},
+			{f: 1.06, c: [4]int{3, 0, 0, 2}},
+			{f: 36.124, c: [4]int{3, 0, 0, 0}},
+			{f: -13.193, c: [4]int{3, 0, 0, -2}},
+			{f: -1.187, c: [4]int{3, 0, 0, -4}},
+			{f: -0.293, c: [4]int{3, 0, 0, -6}},
+			{f: -0.29, c: [4]int{2, 1, 0, 2}},
+			{f: -7.649, c: [4]int{2, 1, 0, 0}},
+			{f: -8.627, c: [4]int{2, 1, 0, -2}},
+			{f: -2.74, c: [4]int{2, 1, 0, -4}},
+			{f: -0.091, c: [4]int{2, 1, 0, -6}},
+			{f: 1.181, c: [4]int{2, -1, 0, 2}},
+			{f: 9.703, c: [4]int{2, -1, 0, 0}},
+			{f: -2.494, c: [4]int{2, -1, 0, -2}},
+			{f: 0.36, c: [4]int{2, -1, 0, -4}},
+			{f: -1.167, c: [4]int{1, 2, 0, 0}},
+			{f: -7.412, c: [4]int{1, 2, 0, -2}},
+			{f: -0.311, c: [4]int{1, 2, 0, -4}},
+			{f: 0.757, c: [4]int{1, -2, 0, 2}},
+			{f: 2.58, c: [4]int{1, -2, 0, 0}},
+			{f: 2.533, c: [4]int{1, -2, 0, -2}},
+			{f: -0.103, c: [4]int{0, 3, 0, 0}},
+			{f: -0.344, c: [4]int{0, 3, 0, -2}},
+			{f: -0.992, c: [4]int{1, 0, 2, 2}},
+			{f: -45.099, c: [4]int{1, 0, 2, 0}},
+			{f: -0.179, c: [4]int{1, 0, 2, -2}},
+			{f: -0.301, c: [4]int{1, 0, 2, -4}},
+			{f: -6.382, c: [4]int{1, 0, -2, 2}},
+			{f: 39.528, c: [4]int{1, 0, -2, 0}},
+			{f: 9.366, c: [4]int{1, 0, -2, -2}},
+			{f: 0.202, c: [4]int{1, 0, -2, -4}},
+			{f: 0.415, c: [4]int{0, 1, 2, 0}},
+			{f: -2.152, c: [4]int{0, 1, 2, -2}},
+			{f: -1.44, c: [4]int{0, 1, -2, 2}},
+			{f: 0.076, c: [4]int{0, 1, -2, 0}},
+			{f: 0.384, c: [4]int{0, 1, -2, -2}},
+			{f: -0.586, c: [4]int{2, 0, 0, 1}},
+			{f: 1.75, c: [4]int{2, 0, 0, -1}},
+			{f: 1.225, c: [4]int{2, 0, 0, -3}},
+			{f: 1.267, c: [4]int{1, 1, 0, 1}},
+			{f: 0.137, c: [4]int{1, 1, 0, -1}},
+			{f: 0.233, c: [4]int{1, 1, 0, -3}},
+			{f: -0.122, c: [4]int{1, -1, 0, 1}},
+			{f: -1.089, c: [4]int{1, -1, 0, -1}},
+			{f: -0.276, c: [4]int{1, -1, 0, -3}},
+			{f: 0.255, c: [4]int{0, 0, 2, 1}},
+			{f: 0.584, c: [4]int{0, 0, 2, -1}},
+			{f: 0.254, c: [4]int{0, 0, 2, -3}},
+			{f: 0.07, c: [4]int{4, 0, 0, 2}},
+			{f: 1.938, c: [4]int{4, 0, 0, 0}},
+			{f: -0.952, c: [4]int{4, 0, 0, -2}},
+			{f: -0.551, c: [4]int{3, 1, 0, 0}},
+			{f: -0.482, c: [4]int{3, 1, 0, -2}},
+			{f: -0.1, c: [4]int{3, 1, 0, -4}},
+			{f: 0.088, c: [4]int{3, -1, 0, 2}},
+			{f: 0.681, c: [4]int{3, -1, 0, 0}},
+			{f: -0.183, c: [4]int{3, -1, 0, -2}},
+			{f: -0.297, c: [4]int{2, 2, 0, -2}},
+			{f: -0.161, c: [4]int{2, 2, 0, -4}},
+			{f: 0.197, c: [4]int{2, -2, 0, 0}},
+			{f: 0.254, c: [4]int{2, -2, 0, -2}},
+			{f: -0.25, c: [4]int{1, 3, 0, -2}},
+			{f: -0.123, c: [4]int{2, 0, 2, 2}},
+			{f: -3.996, c: [4]int{2, 0, 2, 0}},
+			{f: 0.557, c: [4]int{2, 0, 2, -2}},
+			{f: -0.459, c: [4]int{2, 0, -2, 2}},
+			{f: -1.37, c: [4]int{2, 0, -2, 0}},
+			{f: 0.538, c: [4]int{2, 0, -2, -2}},
+			{f: 0.173, c: [4]int{2, 0, -2, -4}},
+			{f: 0.263, c: [4]int{1, 1, 2, 0}},
+			{f: 0.083, c: [4]int{1, 1, -2, 2}},
+			{f: -0.083, c: [4]int{1, 1, -2, 0}},
+			{f: 0.426, c: [4]int{1, 1, -2, -2}},
+			{f: -0.304, c: [4]int{1, -1, 2, 0}},
+			{f: -0.372, c: [4]int{1, -1, -2, 2}},
+			{f: 0.083, c: [4]int{1, -1, -2, 0}},
+			{f: 0.418, c: [4]int{0, 0, 4, 0}},
+			{f: 0.074, c: [4]int{0, 0, 4, -2}},
+			{f: 0.13, c: [4]int{3, 0, 0, -1}},
+			{f: 0.092, c: [4]int{2, 1, 0, 1}},
+			{f: 0.084, c: [4]int{2, 1, 0, -3}},
+			{f: -0.352, c: [4]int{2, -1, 0, -1}},
+			{f: 0.113, c: [4]int{5, 0, 0, 0}},
+			{f: -0.33, c: [4]int{3, 0, 2, 0}},
+			{f: 0.09, c: [4]int{1, 0, 4, 0}},
+			{f: -0.08, c: [4]int{1, 0, -4, 0}},
+		},
+		{
+			{f: -112.79, c: [4]int{0, 0, 0, 1}},
+			{f: 2373.36, c: [4]int{0, 0, 0, 2}},
+			{f: -4.01, c: [4]int{0, 0, 0, 3}},
+			{f: 14.06, c: [4]int{0, 0, 0, 4}},
+			{f: 6.98, c: [4]int{1, 0, 0, 4}},
+			{f: 192.72, c: [4]int{1, 0, 0, 2}},
+			{f: -13.51, c: [4]int{1, 0, 0, 1}},
+			{f: 22609.07, c: [4]int{1, 0, 0, 0}},
+			{f: 3.59, c: [4]int{1, 0, 0, -1}},
+			{f: -4578.13, c: [4]int{1, 0, 0, -2}},
+			{f: 5.44, c: [4]int{1, 0, 0, -3}},
+			{f: -38.64, c: [4]int{1, 0, 0, -4}},
+			{f: 14.78, c: [4]int{2, 0, 0, 2}},
+			{f: 767.96, c: [4]int{2, 0, 0, 0}},
+			{f: 2.01, c: [4]int{2, 0, 0, -1}},
+			{f: -152.53, c: [4]int{2, 0, 0, -2}},
+			{f: -34.07, c: [4]int{2, 0, 0, -4}},
+			{f: 2.96, c: [4]int{3, 0, 0, 2}},
+			{f: 50.64, c: [4]int{3, 0, 0, 0}},
+			{f: -16.4, c: [4]int{3, 0, 0, -2}},
+			{f: 3.6, c: [4]int{4, 0, 0, 0}},
+			{f: -1.58, c: [4]int{4, 0, 0, -2}},
+			{f: -1.59, c: [4]int{0, 1, 0, 4}},
+			{f: -25.1, c: [4]int{0, 1, 0, 2}},
+			{f: 17.93, c: [4]int{0, 1, 0, 1}},
+			{f: -126.98, c: [4]int{0, 1, 0, 0}},
+			{f: -165.06, c: [4]int{0, 1, 0, -2}},
+			{f: -6.46, c: [4]int{0, 1, 0, -4}},
+			{f: -1.68, c: [4]int{0, 2, 0, 2}},
+			{f: -16.35, c: [4]int{0, 2, 0, -2}},
+			{f: -11.75, c: [4]int{1, 1, 0, 2}},
+			{f: 1.52, c: [4]int{1, 1, 0, 1}},
+			{f: -115.18, c: [4]int{1, 1, 0, 0}},
+			{f: -182.36, c: [4]int{1, 1, 0, -2}},
+			{f: -9.66, c: [4]int{1, 1, 0, -4}},
+			{f: -2.27, c: [4]int{-1, 1, 0, 4}},
+			{f: -23.59, c: [4]int{-1, 1, 0, 2}},
+			{f: -138.76, c: [4]int{-1, 1, 0, 0}},
+			{f: -31.7, c: [4]int{-1, 1, 0, -2}},
+			{f: -1.53, c: [4]int{-1, 1, 0, -4}},
+			{f: -10.56, c: [4]int{2, 1, 0, 0}},
+			{f: -7.59, c: [4]int{2, 1, 0, -2}},
+			{f: -2.54, c: [4]int{2, 1, 0, -4}},
+			{f: 3.32, c: [4]int{2, -1, 0, 2}},
+			{f: 11.67, c: [4]int{2, -1, 0, 0}},
+			{f: -6.12, c: [4]int{1, 2, 0, -2}},
+			{f: -2.4, c: [4]int{-1, 2, 0, 2}},
+			{f: -2.32, c: [4]int{-1, 2, 0, 0}},
+			{f: -1.82, c: [4]int{-1, 2, 0, -2}},
+			{f: -52.14, c: [4]int{0, 0, 2, -2}},
+			{f: -1.67, c: [4]int{0, 0, 2, -4}},
+			{f: -9.52, c: [4]int{1, 0, 2, -2}},
+			{f: -85.13, c: [4]int{-1, 0, 2, 0}},
+			{f: 3.37, c: [4]int{-1, 0, 2, -2}},
+			{f: -2.26, c: [4]int{0, 1, 2, -2}},
+		},
+		{
+			{f: -0.725, c: [4]int{0, 0, 0, 1}},
+			{f: 0.601, c: [4]int{0, 0, 0, 2}},
+			{f: 0.394, c: [4]int{0, 0, 0, 3}},
+			{f: -0.445, c: [4]int{1, 0, 0, 4}},
+			{f: 0.455, c: [4]int{1, 0, 0, 1}},
+			{f: 0.192, c: [4]int{1, 0, 0, -3}},
+			{f: 5.679, c: [4]int{2, 0, 0, -2}},
+			{f: -0.308, c: [4]int{2, 0, 0, -4}},
+			{f: -0.166, c: [4]int{3, 0, 0, 2}},
+			{f: -1.3, c: [4]int{3, 0, 0, 0}},
+			{f: 0.258, c: [4]int{3, 0, 0, -2}},
+			{f: -1.302, c: [4]int{0, 1, 0, 0}},
+			{f: -0.416, c: [4]int{0, 1, 0, -4}},
+			{f: -0.74, c: [4]int{0, 2, 0, -2}},
+			{f: 0.787, c: [4]int{1, 1, 0, 2}},
+			{f: 0.461, c: [4]int{1, 1, 0, 0}},
+			{f: 2.056, c: [4]int{1, 1, 0, -2}},
+			{f: -0.471, c: [4]int{1, 1, 0, -4}},
+			{f: -0.443, c: [4]int{-1, 1, 0, 2}},
+			{f: 0.679, c: [4]int{-1, 1, 0, 0}},
+			{f: -1.54, c: [4]int{-1, 1, 0, -2}},
+			{f: 0.259, c: [4]int{2, 1, 0, 0}},
+			{f: -0.212, c: [4]int{2, -1, 0, 2}},
+			{f: -0.151, c: [4]int{2, -1, 0, 0}},
+		},
+		{
+			{f: -526.069, c: [4]int{0, 0, 1, -2}},
+			{f: -3.352, c: [4]int{0, 0, 1, -4}},
+			{f: 44.297, c: [4]int{1, 0, 1, -2}},
+			{f: -6, c: [4]int{1, 0, 1, -4}},
+			{f: 20.599, c: [4]int{-1, 0, 1, 0}},
+			{f: -30.598, c: [4]int{-1, 0, 1, -2}},
+			{f: -24.649, c: [4]int{-2, 0, 1, 0}},
+			{f: -2, c: [4]int{-2, 0, 1, -2}},
+			{f: -22.571, c: [4]int{0, 1, 1, -2}},
+			{f: 10.985, c: [4]int{0, -1, 1, -2}},
+		},
+		{
+			{f: 0.2607, c: [4]int{0, 0, 0, 4}},
+			{f: 28.2333, c: [4]int{0, 0, 0, 2}},
+			{f: 0.0433, c: [4]int{1, 0, 0, 4}},
+			{f: 3.0861, c: [4]int{1, 0, 0, 2}},
+			{f: 186.5398, c: [4]int{1, 0, 0, 0}},
+			{f: 34.3117, c: [4]int{1, 0, 0, -2}},
+			{f: 0.6008, c: [4]int{1, 0, 0, -4}},
+			{f: -0.3, c: [4]int{0, 1, 0, 2}},
+			{f: -0.3997, c: [4]int{0, 1, 0, 0}},
+			{f: 1.9178, c: [4]int{0, 1, 0, -2}},
+			{f: 0.0339, c: [4]int{0, 1, 0, -4}},
+			{f: -0.9781, c: [4]int{0, 0, 0, 1}},
+			{f: 0.2833, c: [4]int{2, 0, 0, 2}},
+			{f: 10.1657, c: [4]int{2, 0, 0, 0}},
+			{f: -0.3039, c: [4]int{2, 0, 0, -2}},
+			{f: 0.3722, c: [4]int{2, 0, 0, -4}},
+			{f: 0.0109, c: [4]int{2, 0, 0, -6}},
+			{f: -0.0484, c: [4]int{1, 1, 0, 2}},
+			{f: -0.949, c: [4]int{1, 1, 0, 0}},
+			{f: 1.4437, c: [4]int{1, 1, 0, -2}},
+			{f: 0.0673, c: [4]int{1, 1, 0, -4}},
+			{f: 0.2302, c: [4]int{1, -1, 0, 2}},
+			{f: 1.1528, c: [4]int{1, -1, 0, 0}},
+			{f: -0.2257, c: [4]int{1, -1, 0, -2}},
+			{f: -0.0102, c: [4]int{1, -1, 0, -4}},
+			{f: 0.0918, c: [4]int{0, 2, 0, -2}},
+			{f: -0.0124, c: [4]int{0, 0, 2, 0}},
+			{f: -0.1052, c: [4]int{0, 0, 2, -2}},
+			{f: -0.1093, c: [4]int{1, 0, 0, 1}},
+			{f: 0.0118, c: [4]int{1, 0, 0, -1}},
+			{f: -0.0386, c: [4]int{1, 0, 0, -3}},
+			{f: 0.1494, c: [4]int{0, 1, 0, 1}},
+			{f: 0.0243, c: [4]int{3, 0, 0, 2}},
+			{f: 0.6215, c: [4]int{3, 0, 0, 0}},
+			{f: -0.1187, c: [4]int{3, 0, 0, -2}},
+			{f: -0.1038, c: [4]int{2, 1, 0, 0}},
+			{f: -0.0192, c: [4]int{2, 1, 0, -2}},
+			{f: 0.0324, c: [4]int{2, 1, 0, -4}},
+			{f: 0.0213, c: [4]int{2, -1, 0, 2}},
+			{f: 0.1268, c: [4]int{2, -1, 0, 0}},
+			{f: -0.0106, c: [4]int{1, 2, 0, 0}},
+			{f: 0.0484, c: [4]int{1, 2, 0, -2}},
+			{f: 0.0112, c: [4]int{1, -2, 0, 2}},
+			{f: 0.0196, c: [4]int{1, -2, 0, 0}},
+			{f: -0.0212, c: [4]int{1, -2, 0, -2}},
+			{f: -0.0833, c: [4]int{1, 0, 2, -2}},
+			{f: -0.0481, c: [4]int{1, 0, -2, 2}},
+			{f: -0.7136, c: [4]int{1, 0, -2, 0}},
+			{f: -0.0112, c: [4]int{1, 0, -2, -2}},
+			{f: -0.01, c: [4]int{2, 0, 0, 1}},
+			{f: 0.0155, c: [4]int{2, 0, 0, -1}},
+			{f: 0.0164, c: [4]int{1, 1, 0, 1}},
+			{f: 0.0401, c: [4]int{4, 0, 0, 0}},
+			{f: -0.013, c: [4]int{4, 0, 0, -2}},
+			{f: 0.0115, c: [4]int{3, -1, 0, 0}},
+			{f: -0.0141, c: [4]int{2, 0, -2, -2}},
+		},
 	}
-	sunf = [8][]float64{
+	sunf = [...][]float64{
 		{
 			-0.265, 0,
 			3.76, 0,
@@ -570,7 +572,7 @@ var (
 			0.36e-6, 0,
 		},
 	}
-	sunc = [8][]int{
+	sunc = [...][]int{
 		{
 			4, -7, 3, 0,
 			-8, 4, 0, 3,
@@ -694,7 +696,7 @@ var (
 			1, 0, -1,
 		},
 	}
-	mercf = [7][]float64{
+	mercf = [...][]float64{
 		{
 			0.013, 0.6807,
 			0.048, 0.6283,
@@ -864,7 +866,7 @@ var (
 			0.347e-6, 5.162,
 		},
 	}
-	mercc = [7][]int{
+	mercc = [...][]int{
 		{
 			4, 1,
 			3, 1,
@@ -1034,7 +1036,7 @@ var (
 			1, 3,
 		},
 	}
-	venf = [3][]float64{
+	venf = [...][]float64{
 		{
 			4.889, 2.0788,
 			11.261, 2.587,
@@ -1065,7 +1067,7 @@ var (
 			1.335e-6, 0.9628,
 		},
 	}
-	venc = [3][]int{
+	venc = [...][]int{
 		{
 			1, -1, 0, 0,
 			2, -2, 0, 0,
@@ -1096,7 +1098,7 @@ var (
 			2, 0, 0, -2,
 		},
 	}
-	nutf = [4][]float64{
+	nutf = [...][]float64{
 		{
 			0.2088, 0,
 			-1.273, 0,
@@ -1132,7 +1134,7 @@ var (
 			-0.005, 0,
 		},
 	}
-	nutc = [4][]int{
+	nutc = [...][]int{
 		{
 			2, 0, 0, 0,
 			2, 2, -2, 0,
@@ -1258,11 +1260,10 @@ func main() {
 			eobjs[i] = *objs[j]
 		}
 	}
-	root = os.Getenv("PLAN9")
 	if root == "" {
 		root = "/usr/local/plan9"
 	}
-	// Murray Hill, NJ
+	// Murray Hill, NJ.
 	nlat = (40 + 41.06/60) * radian
 	wlong = (74 + 23.98/60) * radian
 	elev = 150 * metersToFeet
@@ -1278,10 +1279,10 @@ func main() {
 	}
 	glat = nlat - (692.74*radsec)*math.Sin(2*nlat) + (1.16*radsec)*math.Sin(4*nlat)
 	erad = 0.99832707e0 + 0.00167644e0*math.Cos(2*nlat) - 0.352e-5*math.Cos(4*nlat) + 0.001e-5*math.Cos(6*nlat) + 0.1568e-6*elev
-	for range *nperiods {
+	for range *periods {
 		d := day
 		fmt.Print(julianToTime(d))
-		if *pflag || *eclipse != "" {
+		if *printPos || *eclipse != "" {
 			pstime(d)
 		}
 		fmt.Println()
@@ -1290,8 +1291,8 @@ func main() {
 			for j := range objs {
 				objs[j].f()
 				setobj(&objs[j].point[i])
-				if *pflag {
-					if *mflag && objs[j].name == "Comet" {
+				if *printPos {
+					if *includeComet && objs[j].name == "Comet" {
 						continue
 					}
 					output(objs[j].name, objs[j].point[i])
@@ -1301,17 +1302,17 @@ func main() {
 				d = dist(eobjs[0].point[i], eobjs[1].point[i])
 				fmt.Printf("dist %s to %s = %.4f\n", eobjs[0].name, eobjs[1].name, d)
 			}
-			if *pflag || *eclipse != "" {
+			if *printPos || *eclipse != "" {
 				break
 			}
-			d += deld
+			d += stepSize
 		}
-		if !*pflag || *eclipse == "" {
+		if !*printPos || *eclipse == "" {
 			if err := search(); err != nil {
 				log.Fatal(err)
 			}
 		}
-		day += *p
+		day += *interval
 	}
 }
 
@@ -1334,6 +1335,7 @@ func julianToTime(jd float64) time.Time {
 }
 
 func deltaT(jDay float64) float64 {
+	const meanSolarDaySeconds = 0.001704
 	if *dt != 0 {
 		return *dt
 	}
@@ -1364,45 +1366,33 @@ func fsun() {
 }
 
 func sun() {
-	var mven, merth, mmars, mjup, msat, dmoon, mmoon, gmoon,
-		pturbb, pturbl, pturbr, lograd float64
 	ecc = 0.01675104 - 4.18e-5*capt - 1.26e-7*capt2
-	incl = 0
-	node = 0
-	argp = 281.220833 + 0.0000470684*eday + 0.000453*capt2 + 0.000003*capt3
+	argp = (281.220833 + 0.0000470684*eday + 0.000453*capt2 + 0.000003*capt3) * radian
 	mrad = 1
 	anom = 358.475845 + 0.9856002670*eday - 0.00015*capt2 - 0.000003*capt3
 	motion = 0.9856473354
-	dmoon = 350.737681 + 12.1907491914*eday - 0.001436*capt2
-	gmoon = 11.250889 + 13.229350449*eday - 0.003212*capt2
-	mmoon = 296.104608 + 13.0649924465*eday + 9.192e-3*capt2
-	mven = 212.448 + 1.602121635*eday
-	merth = 358.476 + 0.985600267*eday
-	mmars = 319.59 + 0.524024095*eday
-	mjup = 225.269 + 0.083082362*eday
-	msat = 175.593 + 0.033450794*eday
+	dmoon := 350.737681 + 12.1907491914*eday - 0.001436*capt2
+	gmoon := 11.250889 + 13.229350449*eday - 0.003212*capt2
+	mmoon := 296.104608 + 13.0649924465*eday + 9.192e-3*capt2
+	mven := (212.448 + 1.602121635*eday) * radian
+	merth := (358.476 + 0.985600267*eday) * radian
+	mmars := (319.59 + 0.524024095*eday) * radian
+	mjup := (225.269 + 0.083082362*eday) * radian
+	msat := (175.593 + 0.033450794*eday) * radian
 	dmoon = math.Mod(dmoon, 360) * radian
 	gmoon = math.Mod(gmoon, 360) * radian
 	mmoon = math.Mod(mmoon, 360) * radian
-	mven *= radian
-	merth *= radian
-	mmars *= radian
-	mjup *= radian
-	msat *= radian
 	anom += cosadd(sunf[0], sunc[0], []float64{mmars, merth, mven, mjup}) / 3600
 	anom += sinadd(sunf[1], sunc[1], []float64{mmars, merth, mven, mjup, 0.07884 * capt}) / 3600
-	incl *= radian
-	node *= radian
-	argp *= radian
 	anom = math.Mod(anom, 360) * radian
 	// Computation of elliptic orbit.
 	lambda = anom + argp
-	pturbl = (6910.057-17.24*capt-0.052*capt2)*math.Sin(anom) +
+	pturbl := (6910.057-17.24*capt-0.052*capt2)*math.Sin(anom) +
 		(72.338-0.361*capt)*math.Sin(2.*anom) +
 		(1.054-0.001*capt)*math.Sin(3*anom) + 0.018*math.Sin(4*anom)
 	lambda += pturbl * radsec
 	beta = 0
-	lograd = (30.57e-6 - 0.15e-6*capt) -
+	lograd := (30.57e-6 - 0.15e-6*capt) -
 		(7274.12e-6-18.14e-6*capt-0.05e-6*capt2)*math.Cos(anom) -
 		(91.38e-6-0.46e-6*capt)*math.Cos(2*anom) -
 		(1.45e-6-0.01e-6*capt)*math.Cos(3*anom) -
@@ -1410,21 +1400,21 @@ func sun() {
 	pturbl = cosadd(sunf[2], sunc[2], []float64{mmars, merth, mven, mjup, msat})
 	pturbl += sinadd(sunf[3], sunc[3], []float64{dmoon, mmoon, merth}) + 0.9
 	pturbl *= radsec
-	pturbb = cosadd(sunf[4], sunc[4], []float64{merth, mven, mjup})
+	pturbb := cosadd(sunf[4], sunc[4], []float64{merth, mven, mjup})
 	pturbb += sinadd(sunf[5], sunc[5], []float64{gmoon, mmoon, dmoon})
 	pturbb *= radsec
-	pturbr = cosadd(sunf[6], sunc[6], []float64{mmars, merth, mven, mjup, msat})
+	pturbr := cosadd(sunf[6], sunc[6], []float64{mmars, merth, mven, mjup, msat})
 	pturbr += cosadd(sunf[7], sunc[7], []float64{dmoon, mmoon, merth})
 	lambda += pturbl
-	if lambda > pipi {
-		lambda -= pipi
+	if lambda > twoPi {
+		lambda -= twoPi
 	}
 	beta += pturbb
 	lograd = (lograd + pturbr) * 2.30258509
 	rad = 1 + lograd*(1+lograd*(0.5+lograd/6))
 	motion *= radian * mrad * mrad / (rad * rad)
 	semi = 961.182
-	if *oflag {
+	if *searchOccult {
 		semi = 959.63
 	}
 	mag = -26.5
@@ -1434,11 +1424,10 @@ func sun() {
 // equinox of date to equatorial geocentric coordinates referred to the true
 // equator and equinox.
 func helio() {
-	var xmp, ymp, zmp, beta2 float64
 	// Compute geocentric distance of object and light-time correction.
-	xmp = rad * math.Cos(beta) * math.Cos(lambda)
-	ymp = rad * math.Cos(beta) * math.Sin(lambda)
-	zmp = rad * math.Sin(beta)
+	xmp := rad * math.Cos(beta) * math.Cos(lambda)
+	ymp := rad * math.Cos(beta) * math.Sin(lambda)
+	zmp := rad * math.Sin(beta)
 	rp := math.Sqrt((xmp+xms)*(xmp+xms) + (ymp+yms)*(ymp+yms) + (zmp+zms)*(zmp+zms))
 	lmb2 = lambda - 0.0057756e0*rp*motion
 	xmp = rad * math.Cos(beta) * math.Cos(lmb2)
@@ -1455,7 +1444,7 @@ func helio() {
 	zmp -= zdot * rp
 	// Perform the nutation and so convert from the mean equator and equinox to the true.
 	lmb2 = math.Atan2(ymp, xmp)
-	beta2 = math.Atan2(zmp, math.Sqrt(xmp*xmp+ymp*ymp))
+	beta2 := math.Atan2(zmp, math.Sqrt(xmp*xmp+ymp*ymp))
 	lmb2 += phi
 	// Change to equatorial coordinates.
 	xmp = rp * math.Cos(lmb2) * math.Cos(beta2)
@@ -1473,115 +1462,88 @@ func helio() {
 // geo converts geocentric equatorial coordinates to topocentric equatorial and
 // topocentric horizon coordinates. All are (usually) referred to the true equator.
 func geo() {
-	var sel, saz, caz, f, sa, ca, sd float64
-	// Convert to local hour angle and declination
+	// Convert to local hour angle and declination.
 	lha = gst - alpha - wlong
 	decl = delta
-	// Compute diurnal parallax (requires geocentric latitude)
-	sa = math.Cos(decl) * math.Sin(lha)
-	ca = math.Cos(decl)*math.Cos(lha) - erad*math.Cos(glat)*math.Sin(hp)
-	sd = math.Sin(decl) - erad*math.Sin(glat)*math.Sin(hp)
+	// Compute diurnal parallax (requires geocentric latitude).
+	sa := math.Cos(decl) * math.Sin(lha)
+	ca := math.Cos(decl)*math.Cos(lha) - erad*math.Cos(glat)*math.Sin(hp)
+	sd := math.Sin(decl) - erad*math.Sin(glat)*math.Sin(hp)
 	lha = math.Atan2(sa, ca)
 	decl2 = math.Atan2(sd, math.Sqrt(sa*sa+ca*ca))
-	f = math.Sqrt(sa*sa + ca*ca + sd*sd)
+	f := math.Sqrt(sa*sa + ca*ca + sd*sd)
 	semi2 = semi / f
 	ra = gst - lha - wlong
-	ra = pinorm(ra)
-	// Convert to horizon coordinates
-	sel = math.Sin(nlat)*math.Sin(decl2) + math.Cos(nlat)*math.Cos(decl2)*math.Cos(lha)
-	el = math.Atan2(sel, pyth(sel))
-	saz = math.Sin(lha) * math.Cos(decl2)
-	caz = math.Cos(nlat)*math.Sin(decl2) - math.Sin(nlat)*math.Cos(decl2)*math.Cos(lha)
-	az = math.Pi + math.Atan2(saz, -caz)
-	az /= radian
-	el /= radian
+	ra = piNorm(ra)
+	// Convert to horizon coordinates.
+	sel := math.Sin(nlat)*math.Sin(decl2) + math.Cos(nlat)*math.Cos(decl2)*math.Cos(lha)
+	el = math.Atan2(sel, pyth(sel)) / radian
+	saz := math.Sin(lha) * math.Cos(decl2)
+	caz := math.Cos(nlat)*math.Sin(decl2) - math.Sin(nlat)*math.Cos(decl2)*math.Cos(lha)
+	az = (math.Pi + math.Atan2(saz, -caz)) / radian
 }
 
-func pinorm(a float64) float64 {
-	for a < -math.Pi {
-		a += pipi
-	}
-	for a > math.Pi {
-		a -= pipi
-	}
-	return a
+func piNorm(a float64) float64 {
+	return math.Mod(a+math.Pi, 2*math.Pi) - math.Pi
 }
 
 func pyth(x float64) float64 {
-	x *= x
-	if x > 1 {
-		x = 1
-	}
-	return math.Sqrt(1 - x)
+	return math.Sqrt(1 - min(x*x, 1))
 }
 
 var k1, k2, k3, k4, mnom, msun, noded, dmoon float64
 
 func moon() {
-	var dlong, lsun, psun, eccm, eccs, chp, cpe, v0, t0, m0, j0,
-		arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10,
-		dgamma, k5, k6, lterms, sterms, cterms, nterms, pterms, spterms,
-		gamma1, gamma2, gamma3, arglat, xmp, ymp, zmp, obl2 float64
 	// The fundamental elements - all referred to the epoch of Jan 0.5, 1900 and
 	// to the mean equinox of date.
-	dlong = 270.434164 + 13.1763965268*eday - 0.001133*capt2 + 2e-6*capt3
+	dlong := 270.434164 + 13.1763965268*eday - 0.001133*capt2 + 2e-6*capt3
 	argp = 334.329556 + 0.1114040803*eday - 0.010325*capt2 - 12e-6*capt3
 	node = 259.183275 - 0.0529539222*eday + 0.002078*capt2 + 2e-6*capt3
-	lsun = 279.696678 + 0.9856473354*eday + 0.000303*capt2
-	psun = 281.220833 + 0.0000470684*eday + 0.000453*capt2 + 3e-6*capt3
+	lsun := 279.696678 + 0.9856473354*eday + 0.000303*capt2
+	psun := 281.220833 + 0.0000470684*eday + 0.000453*capt2 + 3e-6*capt3
 	dlong = math.Mod(dlong, 360)
 	argp = math.Mod(argp, 360)
 	node = math.Remainder(node, 360)
 	lsun = math.Mod(lsun, 360)
 	psun = math.Mod(psun, 360)
-	eccm = 22639.55
-	eccs = 0.01675104 - 0.0000418*capt
+	eccm := 22639.55
+	eccs := 0.01675104 - 0.0000418*capt
 	incl = 18461.4
-	cpe = 124.986
-	chp = 3422.451
+	cpe := 124.986
+	chp := 3422.451
 	// Some subsidiary elements - they are all longitudes and they are referred
 	// to the epoch 1/0.5 1900 and to the fixed mean equinox of 1850.0.
-	v0 = 342.069128 + 1.602130482*eday
-	t0 = 98.998753 + 0.9856091138*eday
-	m0 = 293.049675 + 0.5240329445*eday
-	j0 = 237.352319 + 0.0830912295*eday
+	v0 := 342.069128 + 1.602130482*eday
+	t0 := 98.998753 + 0.9856091138*eday
+	m0 := 293.049675 + 0.5240329445*eday
+	j0 := 237.352319 + 0.0830912295*eday
 	// The following are periodic corrections to the fundamental elements and constants.
-	arg1 = 41.1 + 20.2*(capt+0.5)
-	arg2 = dlong - argp + 33 + 3*t0 - 10*v0 - 2.6*(capt+0.5)
-	arg3 = dlong - argp + 151.1 + 16*t0 - 18*v0 - (capt + 0.5) // The "Great Venus Inequality".
-	arg4 = node
-	arg5 = node + 276.2 - 2.3*(capt+0.5)
-	arg6 = 313.9 + 13*t0 - 8*v0
-	arg7 = dlong - argp + 112 + 29*t0 - 26*v0
-	arg8 = dlong + argp - 2*lsun + 273 + 21*t0 - 20*v0
-	arg9 = node + 290.1 - 0.9*(capt+0.5)
-	arg10 = 115 + 38.5*(capt+0.5)
-	arg1 *= radian
-	arg2 *= radian
-	arg3 *= radian
-	arg4 *= radian
-	arg5 *= radian
-	arg6 *= radian
-	arg7 *= radian
-	arg8 *= radian
-	arg9 *= radian
-	arg10 *= radian
+	arg1 := (41.1 + 20.2*(capt+0.5)) * radian
+	arg2 := (dlong - argp + 33 + 3*t0 - 10*v0 - 2.6*(capt+0.5)) * radian
+	arg3 := (dlong - argp + 151.1 + 16*t0 - 18*v0 - (capt + 0.5)) * radian // The "Great Venus Inequality".
+	arg4 := node * radian
+	arg5 := (node + 276.2 - 2.3*(capt+0.5)) * radian
+	arg6 := (313.9 + 13*t0 - 8*v0) * radian
+	arg7 := (dlong - argp + 112 + 29*t0 - 26*v0) * radian
+	arg8 := (dlong + argp - 2*lsun + 273 + 21*t0 - 20*v0) * radian
+	arg9 := (node + 290.1 - 0.9*(capt+0.5)) * radian
+	arg10 := (115 + 38.5*(capt+0.5)) * radian
 	dlong += (0.84*math.Sin(arg1) + 0.31*math.Sin(arg2) + 14.27*math.Sin(arg3) + 7.261*math.Sin(arg4) +
 		0.282*math.Sin(arg5) + 0.237*math.Sin(arg6) + 0.108*math.Sin(arg7) + 0.126*math.Sin(arg8)) / 3600
 	argp += (-2.1*math.Sin(arg1) - 0.118*math.Sin(arg3) - 2.076*math.Sin(arg4) - 0.84*math.Sin(arg5) - 0.593*math.Sin(arg6)) / 3600
 	node += (0.63*math.Sin(arg1) + 0.17*math.Sin(arg3) + 95.96*math.Sin(arg4) + 15.58*math.Sin(arg5) + 1.86*math.Sin(arg9)) / 3600
 	t0 += (-6.4*math.Sin(arg1) - 1.89*math.Sin(arg6)) / 3600
 	psun += (6.4*math.Sin(arg1) + 1.89*math.Sin(arg6)) / 3600
-	dgamma = -4.318*math.Cos(arg4) - 0.698*math.Cos(arg5) - 0.083*math.Cos(arg9)
+	dgamma := -4.318*math.Cos(arg4) - 0.698*math.Cos(arg5) - 0.083*math.Cos(arg9)
 	j0 += 0.33 * math.Sin(arg10)
 	// The following factors account for the fact that the eccentricity, solar eccentricity,
 	// inclination and parallax used by Brown to make up his coefficients are
-	// both wrong and out of date.  Brown did the same thing in a different way.
+	// both wrong and out of date. Brown did the same thing in a different way.
 	k1 = eccm / 22639.5
 	k2 = eccs / 0.01675104
 	k3 = 1 + 2.708e-6 + 0.000108008*dgamma
 	k4 = cpe / 125.154
-	k5 = chp / 3422.7
+	k5 := chp / 3422.7
 	// The principal arguments that are used to compute perturbations are the following
 	// differences of the fundamental elements.
 	mnom = dlong - argp
@@ -1589,11 +1551,10 @@ func moon() {
 	noded = dlong - node
 	dmoon = dlong - lsun
 	// Solar terms in longitude.
-	var i int
-	for ; moontab[i].f != 0; i++ {
-		lterms += sinx(moontab[i].f, moontab[i].c[0], moontab[i].c[1], moontab[i].c[2], moontab[i].c[3], 0)
+	var lterms float64
+	for _, t := range moonTabs[0] {
+		lterms += sinx(t.f, t.c[0], t.c[1], t.c[2], t.c[3], 0)
 	}
-	i++
 	// Planetary terms in longitude.
 	lterms += sinx(0.822, 0, 0, 0, 0, t0-v0)
 	lterms += sinx(0.307, 0, 0, 0, 0, 2*t0-2*v0+179.8)
@@ -1636,38 +1597,35 @@ func moon() {
 	lterms += sinx(0.074, 1, 0, 0, 0, t0-2*m0+306.3)
 	lterms += sinx(0.189, 0, 0, 0, 0, node+180)
 	// Solar terms in latitude.
-	sterms = 0
-	for ; moontab[i].f != 0; i++ {
-		sterms += sinx(moontab[i].f, moontab[i].c[0], moontab[i].c[1], moontab[i].c[2], moontab[i].c[3], 0)
+	var sterms float64
+	for _, t := range moonTabs[1] {
+		sterms += sinx(t.f, t.c[0], t.c[1], t.c[2], t.c[3], 0)
 	}
-	i++
-	cterms = 0
-	for ; moontab[i].f != 0; i++ {
-		cterms += cosx(moontab[i].f, moontab[i].c[0], moontab[i].c[1], moontab[i].c[2], moontab[i].c[3], 0)
+	var cterms float64
+	for _, t := range moonTabs[2] {
+		cterms += cosx(t.f, t.c[0], t.c[1], t.c[2], t.c[3], 0)
 	}
-	i++
-	nterms = 0
-	for ; moontab[i].f != 0; i++ {
-		nterms += sinx(moontab[i].f, moontab[i].c[0], moontab[i].c[1], moontab[i].c[2], moontab[i].c[3], 0)
+	var nterms float64
+	for _, t := range moonTabs[3] {
+		nterms += sinx(t.f, t.c[0], t.c[1], t.c[2], t.c[3], 0)
 	}
-	i++
 	// Planetary terms in latitude.
-	pterms = sinx(0.215, 0, 0, 0, 0, dlong)
+	pterms := sinx(0.215, 0, 0, 0, 0, dlong)
 	// Solar terms in parallax.
-	spterms = 3422.7
-	for ; moontab[i].f != 0; i++ {
-		spterms += cosx(moontab[i].f, moontab[i].c[0], moontab[i].c[1], moontab[i].c[2], moontab[i].c[3], 0)
+	spterms := 3422.7
+	for _, t := range moonTabs[4] {
+		spterms += cosx(t.f, t.c[0], t.c[1], t.c[2], t.c[3], 0)
 	}
 	// Computation of longitude.
 	lambda = (dlong + lterms/3600) * radian
 	// Computation of latitude.
-	arglat = (noded + sterms/3600) * radian
-	gamma1 = 18519.7 * k3
-	gamma2 = -6.241 * k3 * k3 * k3
-	gamma3 = 0.004 * k3 * k3 * k3 * k3 * k3
-	k6 = (gamma1 + cterms) / gamma1
+	arglat := (noded + sterms/3600) * radian
+	gamma1 := 18519.7 * k3
+	gamma2 := -6.241 * k3 * k3 * k3
+	gamma3 := 0.004 * k3 * k3 * k3 * k3 * k3
+	k6 := (gamma1 + cterms) / gamma1
 	beta = k6*(gamma1*math.Sin(arglat)+gamma2*math.Sin(3.*arglat)+gamma3*math.Sin(5.*arglat)+nterms) + pterms
-	if *oflag {
+	if *searchOccult {
 		beta -= 0.6
 	}
 	beta *= radsec
@@ -1682,10 +1640,10 @@ func moon() {
 	mag = dmoon / 360
 	// Change to equatorial coordinates.
 	lambda += phi
-	obl2 = obliq + eps
-	xmp = math.Cos(lambda) * math.Cos(beta)
-	ymp = math.Sin(lambda)*math.Cos(beta)*math.Cos(obl2) - math.Sin(obl2)*math.Sin(beta)
-	zmp = math.Sin(lambda)*math.Cos(beta)*math.Sin(obl2) + math.Cos(obl2)*math.Sin(beta)
+	obl2 := obliq + eps
+	xmp := math.Cos(lambda) * math.Cos(beta)
+	ymp := math.Sin(lambda)*math.Cos(beta)*math.Cos(obl2) - math.Sin(obl2)*math.Sin(beta)
+	zmp := math.Sin(lambda)*math.Cos(beta)*math.Sin(obl2) + math.Cos(obl2)*math.Sin(beta)
 	alpha = math.Atan2(ymp, xmp)
 	delta = math.Atan2(zmp, math.Sqrt(xmp*xmp+ymp*ymp))
 	meday = eday
@@ -1732,7 +1690,7 @@ func shad() {
 	if meday != eday {
 		moon()
 	}
-	alpha = math.Mod(salph+math.Pi, pipi)
+	alpha = math.Mod(salph+math.Pi, twoPi)
 	delta = -sdelt
 	hp = mhp
 	semi = 1.0183*mhp/radsec - 969.85/srad
@@ -1740,61 +1698,50 @@ func shad() {
 }
 
 func merc() {
-	var pturbl, pturbr, lograd, dele, enom, vnom, nd, sl, q0, v0, t0, j0, s0,
-		lsun, elong, ci, dlong float64
 	ecc = 0.20561421 + 0.00002046*capt - 0.03e-6*capt2
-	incl = 7.0028806 + 0.0018608*capt - 18.3e-6*capt2
-	node = 47.145944 + 1.185208*capt + 0.0001739*capt2
-	argp = 75.899697 + 1.55549*capt + 0.0002947*capt2
+	incl = (7.0028806 + 0.0018608*capt - 18.3e-6*capt2) * radian
+	node = (47.145944 + 1.185208*capt + 0.0001739*capt2) * radian
+	argp = (75.899697 + 1.55549*capt + 0.0002947*capt2) * radian
 	mrad = 0.3870986
 	anom = 102.279381 + 4.0923344364*eday + 6.7e-6*capt2
 	motion = 4.0923770233
-	q0 = 102.28 + 4.092334429*eday
-	v0 = 212.536 + 1.602126105*eday
-	t0 = -1.45 + 0.985604737*eday
-	j0 = 225.36 + 0.083086735*eday
-	s0 = 175.68 + 0.033455441*eday
-	q0 *= radian
-	v0 *= radian
-	t0 *= radian
-	j0 *= radian
-	s0 *= radian
-	incl *= radian
-	node *= radian
-	argp *= radian
+	q0 := (102.28 + 4.092334429*eday) * radian
+	v0 := (212.536 + 1.602126105*eday) * radian
+	t0 := (-1.45 + 0.985604737*eday) * radian
+	j0 := (225.36 + 0.083086735*eday) * radian
+	s0 := (175.68 + 0.033455441*eday) * radian
 	anom = math.Mod(anom, 360) * radian
-	enom = anom + ecc*math.Sin(anom)
+	enom := anom + ecc*math.Sin(anom)
 	for {
-		dele = (anom - enom + ecc*math.Sin(enom)) / (1 - ecc*math.Cos(enom))
+		dele := (anom - enom + ecc*math.Sin(enom)) / (1 - ecc*math.Cos(enom))
 		enom += dele
 		if math.Abs(dele) <= converge {
 			break
 		}
 	}
-	vnom = 2 * math.Atan2(math.Sqrt((1+ecc)/(1-ecc))*math.Sin(enom/2), math.Cos(enom/2))
+	vnom := 2 * math.Atan2(math.Sqrt((1+ecc)/(1-ecc))*math.Sin(enom/2), math.Cos(enom/2))
 	rad = mrad * (1 - ecc*math.Cos(enom))
-	pturbl = cosadd(mercf[0], mercc[0], []float64{q0, -v0})
+	pturbl := cosadd(mercf[0], mercc[0], []float64{q0, -v0})
 	pturbl += cosadd(mercf[1], mercc[1], []float64{q0, -t0})
 	pturbl += cosadd(mercf[2], mercc[2], []float64{q0, -j0})
 	pturbl += cosadd(mercf[3], mercc[3], []float64{q0, -s0})
-	pturbr = cosadd(mercf[4], mercc[4], []float64{q0, -v0})
+	pturbr := cosadd(mercf[4], mercc[4], []float64{q0, -v0})
 	pturbr += cosadd(mercf[5], mercc[5], []float64{q0, -t0})
 	pturbr += cosadd(mercf[6], mercc[6], []float64{q0, -j0})
 	// Reduce to the ecliptic.
 	lambda = vnom + argp + pturbl*radsec
-	nd = lambda - node
+	nd := lambda - node
 	lambda = node + math.Atan2(math.Sin(nd)*math.Cos(incl), math.Cos(nd))
-	sl = math.Sin(incl) * math.Sin(nd)
+	sl := math.Sin(incl) * math.Sin(nd)
 	beta = math.Atan2(sl, pyth(sl))
-	lograd = pturbr * 2.30258509
+	lograd := pturbr * 2.30258509
 	rad *= 1 + lograd
 	motion *= radian * mrad * mrad / (rad * rad)
 	semi = 3.34
-	lsun = 99.696678 + 0.9856473354*eday
-	lsun *= radian
-	elong = lambda - lsun
-	ci = (rad - math.Cos(elong)) / math.Sqrt(1+rad*rad-2*rad*math.Cos(elong))
-	dlong = math.Atan2(pyth(ci), ci) / radian
+	lsun := (99.696678 + 0.9856473354*eday) * radian
+	elong := lambda - lsun
+	ci := (rad - math.Cos(elong)) / math.Sqrt(1+rad*rad-2*rad*math.Cos(elong))
+	dlong := math.Atan2(pyth(ci), ci) / radian
 	mag = -0.003 + 0.01815*dlong + 0.0001023*dlong*dlong
 	helio()
 	geo()
@@ -1823,71 +1770,58 @@ func trigadd(f func(float64) float64, caf []float64, cac []int, coefs []float64)
 }
 
 func venus() {
-	var pturbl, pturbb, pturbr, lograd, dele, enom, vnom, nd, sl, v0, t0, m0, j0, s0,
-		lsun, elong, ci, dlong float64
 	// Mean orbital elements.
 	ecc = 0.00682069 - 0.00004774*capt + 0.091e-6*capt2
-	incl = 3.393631 + 0.0010058*capt - 0.97e-6*capt2
-	node = 75.779647 + 0.89985*capt + 0.00041*capt2
-	argp = 130.163833 + 1.408036*capt - 0.0009763*capt2
+	incl = (3.393631 + 0.0010058*capt - 0.97e-6*capt2) * radian
+	node = (75.779647 + 0.89985*capt + 0.00041*capt2) * radian
+	argp = (130.163833 + 1.408036*capt - 0.0009763*capt2) * radian
 	mrad = 0.7233316
 	anom = 212.603219 + 1.602130154*eday + 0.00128605*capt2
 	motion = 1.6021687039
 	// Mean anomalies of perturbing planets.
-	v0 = 212.6 + 1.602130154*eday
-	t0 = 358.63 + 0.985608747*eday
-	m0 = 319.74 + 0.52403249*eday
-	j0 = 225.43 + 0.083090842*eday
-	s0 = 175.8 + 0.033459258*eday
-	v0 *= radian
-	t0 *= radian
-	m0 *= radian
-	j0 *= radian
-	s0 *= radian
-	incl *= radian
-	node *= radian
-	argp *= radian
+	v0 := (212.6 + 1.602130154*eday) * radian
+	t0 := (358.63 + 0.985608747*eday) * radian
+	m0 := (319.74 + 0.52403249*eday) * radian
+	j0 := (225.43 + 0.083090842*eday) * radian
+	s0 := (175.8 + 0.033459258*eday) * radian
 	anom = math.Mod(anom, 360) * radian
 	// Computation of long period terms affecting the mean anomaly.
 	anom += (2.761-0.022*capt)*radsec*math.Sin(13*t0-8*v0+43.83*radian+4.52*radian*capt) +
 		0.268*radsec*math.Cos(4*m0-7*t0+3*v0) +
 		0.019*radsec*math.Sin(4*m0-7*t0+3*v0) -
 		0.208*radsec*math.Sin(s0+1.4*radian*capt)
-	// Computation of elliptic orbit.
-	enom = anom + ecc*math.Sin(anom)
+		// Computation of elliptic orbit.
+	enom := anom + ecc*math.Sin(anom)
 	for {
-		dele = (anom - enom + ecc*math.Sin(enom)) / (1 - ecc*math.Cos(enom))
+		dele := (anom - enom + ecc*math.Sin(enom)) / (1 - ecc*math.Cos(enom))
 		enom += dele
 		if math.Abs(dele) <= converge {
 			break
 		}
 	}
-	vnom = 2 * math.Atan2(math.Sqrt((1+ecc)/(1-ecc))*math.Sin(enom/2), math.Cos(enom/2))
+	vnom := 2 * math.Atan2(math.Sqrt((1+ecc)/(1-ecc))*math.Sin(enom/2), math.Cos(enom/2))
 	rad = mrad * (1 - ecc*math.Cos(enom))
 	lambda = vnom + argp
 	// Perturbations in longitude.
-	pturbl = cosadd(venf[0], venc[0], []float64{v0, t0, m0, j0})
-	pturbl *= radsec
+	pturbl := cosadd(venf[0], venc[0], []float64{v0, t0, m0, j0}) * radsec
 	// Perturbations in latitude.
-	pturbb = cosadd(venf[1], venc[1], []float64{v0, t0, j0})
-	pturbb *= radsec
+	pturbb := cosadd(venf[1], venc[1], []float64{v0, t0, j0}) * radsec
 	// Perturbations in log radius vector.
-	pturbr = cosadd(venf[2], venc[2], []float64{v0, t0, m0, j0})
+	pturbr := cosadd(venf[2], venc[2], []float64{v0, t0, m0, j0})
 	// Reduction to the ecliptic.
 	lambda += pturbl
-	nd = lambda - node
+	nd := lambda - node
 	lambda = node + math.Atan2(math.Sin(nd)*math.Cos(incl), math.Cos(nd))
-	sl = math.Sin(incl) * math.Sin(nd)
+	sl := math.Sin(incl) * math.Sin(nd)
 	beta = math.Atan2(sl, pyth(sl)) + pturbb
-	lograd = pturbr * 2.30258509
+	lograd := pturbr * 2.30258509
 	rad *= 1 + lograd
 	motion *= radian * mrad * mrad / (rad * rad)
 	// Computation of magnitude.
-	lsun = 99.696678 + 0.9856473354*eday
-	lsun *= radian
-	elong = lambda - lsun
-	ci = (rad - math.Cos(elong)) / math.Sqrt(1+rad*rad-2*rad*math.Cos(elong))
-	dlong = math.Atan2(pyth(ci), ci) / radian
+	lsun := (99.696678 + 0.9856473354*eday) * radian
+	elong := lambda - lsun
+	ci := (rad - math.Cos(elong)) / math.Sqrt(1+rad*rad-2*rad*math.Cos(elong))
+	dlong := math.Atan2(pyth(ci), ci) / radian
 	mag = -4 + 0.01322*dlong + 0.0000004247*dlong*dlong*dlong
 	semi = 8.41
 	helio()
@@ -1895,90 +1829,66 @@ func venus() {
 }
 
 func mars() {
-	var pturbl, pturbb, pturbr, lograd, dele, enom, vnom, nd, sl,
-		lsun, elong, ci, dlong float64
 	ecc = 0.0933129 + 0.000092064*capt
-	incl = 1.850333 - 6.75e-4*capt
-	node = 48.786442 + 0.770992*capt
-	argp = 334.218203 + 1.840758*capt + 1.3e-4*capt2
+	incl = (1.850333 - 6.75e-4*capt) * radian
+	node = (48.786442 + 0.770992*capt) * radian
+	argp = (334.218203 + 1.840758*capt + 1.3e-4*capt2) * radian
 	mrad = 1.5236915
 	anom = 319.529425 + 0.5240207666*eday + 1.808e-4*capt2
 	motion = 0.5240711638
-	incl = incl * radian
-	node = node * radian
-	argp = argp * radian
 	anom = math.Mod(anom, 360) * radian
-	enom = anom + ecc*math.Sin(anom)
+	enom := anom + ecc*math.Sin(anom)
 	for {
-		dele = (anom - enom + ecc*math.Sin(enom)) / (1 - ecc*math.Cos(enom))
+		dele := (anom - enom + ecc*math.Sin(enom)) / (1 - ecc*math.Cos(enom))
 		enom += dele
 		if math.Abs(dele) <= converge {
 			break
 		}
 	}
-	vnom = 2 * math.Atan2(math.Sqrt((1+ecc)/(1-ecc))*math.Sin(enom/2), math.Cos(enom/2))
+	vnom := 2 * math.Atan2(math.Sqrt((1+ecc)/(1-ecc))*math.Sin(enom/2), math.Cos(enom/2))
 	rad = mrad * (1 - ecc*math.Cos(enom))
 	lambda = vnom + argp
-	pturbl = 0
-	lambda = lambda + pturbl*radsec
-	pturbb = 0
-	pturbr = 0
 	// Reduce to the ecliptic.
-	nd = lambda - node
+	nd := lambda - node
 	lambda = node + math.Atan2(math.Sin(nd)*math.Cos(incl), math.Cos(nd))
-	sl = math.Sin(incl)*math.Sin(nd) + pturbb*radsec
+	sl := math.Sin(incl) * math.Sin(nd)
 	beta = math.Atan2(sl, pyth(sl))
-	lograd = pturbr * 2.30258509
-	rad *= 1 + lograd
 	motion *= radian * mrad * mrad / (rad * rad)
 	semi = 4.68
-	lsun = 99.696678 + 0.9856473354*eday
-	lsun *= radian
-	elong = lambda - lsun
-	ci = (rad - math.Cos(elong)) / math.Sqrt(1+rad*rad-2*rad*math.Cos(elong))
-	dlong = math.Atan2(pyth(ci), ci) / radian
+	lsun := (99.696678 + 0.9856473354*eday) * radian
+	elong := lambda - lsun
+	ci := (rad - math.Cos(elong)) / math.Sqrt(1+rad*rad-2*rad*math.Cos(elong))
+	dlong := math.Atan2(pyth(ci), ci) / radian
 	mag = -1.3 + 0.01486*dlong
 	helio()
 	geo()
 }
 
 func jup() {
-	var pturbl, pturbb, pturbr, lograd, dele, enom, vnom, nd, sl float64
 	ecc = 0.0483376 + 163e-6*capt
-	incl = 1.30866 - 0.0055*capt
-	node = 99.43785 + 1.011*capt
-	argp = 12.71165 + 1.611*capt
+	incl = (1.30866 - 0.0055*capt) * radian
+	node = (99.43785 + 1.011*capt) * radian
+	argp = (12.71165 + 1.611*capt) * radian
 	mrad = 5.202803
 	anom = 225.22165 + 0.0830912*eday - 0.0484*capt
 	motion = 299.1284 / 3600
-	incl *= radian
-	node *= radian
-	argp *= radian
 	anom = math.Mod(anom, 360) * radian
-	enom = anom + ecc*math.Sin(anom)
+	enom := anom + ecc*math.Sin(anom)
 	for {
-		dele = (anom - enom + ecc*math.Sin(enom)) / (1 - ecc*math.Cos(enom))
+		dele := (anom - enom + ecc*math.Sin(enom)) / (1 - ecc*math.Cos(enom))
 		enom += dele
 		if math.Abs(dele) <= converge {
 			break
 		}
 	}
-	vnom = 2 * math.Atan2(math.Sqrt((1+ecc)/(1-ecc))*math.Sin(enom/2), math.Cos(enom/2))
+	vnom := 2 * math.Atan2(math.Sqrt((1+ecc)/(1-ecc))*math.Sin(enom/2), math.Cos(enom/2))
 	rad = mrad * (1 - ecc*math.Cos(enom))
 	lambda = vnom + argp
-	pturbl = 0
-	lambda += pturbl * radsec
-	pturbb = 0
-	pturbr = 0
 	// Reduce to the ecliptic.
-	nd = lambda - node
-	lambda = node + math.Atan2(math.Sin(nd)*math.Cos(incl), math.Cos(nd))
-	sl = math.Sin(incl)*math.Sin(nd) + pturbb*radsec
-	beta = math.Atan2(sl, pyth(sl))
-	lograd = pturbr * 2.30258509
-	rad *= 1 + lograd
-	lambda += 555 * radsec
-	beta -= 51 * radsec
+	nd := lambda - node
+	lambda = node + math.Atan2(math.Sin(nd)*math.Cos(incl), math.Cos(nd)) + 555*radsec
+	sl := math.Sin(incl) * math.Sin(nd)
+	beta = math.Atan2(sl, pyth(sl)) - 51*radsec
 	motion *= radian * mrad * mrad / (rad * rad)
 	semi = 98.47
 	mag = -8.93
@@ -1987,75 +1897,54 @@ func jup() {
 }
 
 func sat() {
-	var pturbl, pturbb, pturbr, lograd, dele, enom, vnom, nd, sl,
-		capj, capn, eye, comg, omg, sb, su, cu, u, b, up, sd, ca, sa float64
 	ecc = 0.05589 - 0.000347*capt
-	incl = 2.49256 - 0.0044*capt
-	node = 112.78364 + 0.87306*capt
-	argp = 91.08897 + 1.95917*capt
+	incl = (2.49256 - 0.0044*capt) * radian
+	node = (112.78364 + 0.87306*capt) * radian
+	argp = (91.08897 + 1.95917*capt) * radian
 	mrad = 9.538843
 	anom = 175.4763 + 0.03345972*eday - 0.56527*capt
 	motion = 120.455 / 3600
-	incl *= radian
-	node *= radian
-	argp *= radian
 	anom = math.Mod(anom, 360) * radian
-	enom = anom + ecc*math.Sin(anom)
+	enom := anom + ecc*math.Sin(anom)
 	for {
-		dele = (anom - enom + ecc*math.Sin(enom)) / (1 - ecc*math.Cos(enom))
+		dele := (anom - enom + ecc*math.Sin(enom)) / (1 - ecc*math.Cos(enom))
 		enom += dele
 		if math.Abs(dele) <= converge {
 			break
 		}
 	}
-	vnom = 2 * math.Atan2(math.Sqrt((1+ecc)/(1-ecc))*math.Sin(enom/2), math.Cos(enom/2))
+	vnom := 2 * math.Atan2(math.Sqrt((1+ecc)/(1-ecc))*math.Sin(enom/2), math.Cos(enom/2))
 	rad = mrad * (1 - ecc*math.Cos(enom))
 	lambda = vnom + argp
-	pturbl = 0
-	lambda += pturbl * radsec
-	pturbb = 0
-	pturbr = 0
 	// Reduce to the ecliptic.
-	nd = lambda - node
-	lambda = node + math.Atan2(math.Sin(nd)*math.Cos(incl), math.Cos(nd))
-	sl = math.Sin(incl)*math.Sin(nd) + pturbb*radsec
-	beta = math.Atan2(sl, pyth(sl))
-	lograd = pturbr * 2.30258509
-	rad *= 1 + lograd
-	lambda -= 1185 * radsec
-	beta -= 51 * radsec
+	nd := lambda - node
+	lambda = node + math.Atan2(math.Sin(nd)*math.Cos(incl), math.Cos(nd)) - 1185*radsec
+	sl := math.Sin(incl) * math.Sin(nd)
+	beta = math.Atan2(sl, pyth(sl)) - 51*radsec
 	motion *= radian * mrad * mrad / (rad * rad)
 	semi = 83.33
 	// Computation of magnitude; first, find the geocentric equatorial coordinates of Saturn.
-	sd = rad * (math.Cos(beta)*math.Sin(lambda)*math.Sin(obliq) + math.Sin(beta)*math.Cos(obliq))
-	sa = rad * (math.Cos(beta)*math.Sin(lambda)*math.Cos(obliq) - math.Sin(beta)*math.Sin(obliq))
-	ca = rad * math.Cos(beta) * math.Cos(lambda)
-	sd += zms
-	sa += yms
-	ca += xms
+	sd := rad*(math.Cos(beta)*math.Sin(lambda)*math.Sin(obliq)+math.Sin(beta)*math.Cos(obliq)) + zms
+	sa := rad*(math.Cos(beta)*math.Sin(lambda)*math.Cos(obliq)-math.Sin(beta)*math.Sin(obliq)) + yms
+	ca := rad*(math.Cos(beta)*math.Cos(lambda)) + xms
 	alpha = math.Atan2(sa, ca)
 	delta = math.Atan2(sd, math.Sqrt(sa*sa+ca*ca))
 	// Here are the necessary elements of Saturn's rings cf. Exp. Supp. p. 363ff.
-	capj = 6.9056 - 0.4322*capt
-	capn = 126.3615 + 3.9894*capt + 0.2403*capt2
-	eye = 28.0743 - 0.0128*capt
-	comg = 168.1179 + 1.3936*capt
-	omg = 42.9236 - 2.739*capt - 0.2344*capt2
-	capj *= radian
-	capn *= radian
-	eye *= radian
-	comg *= radian
-	omg *= radian
+	capj := (6.9056 - 0.4322*capt) * radian
+	capn := (126.3615 + 3.9894*capt + 0.2403*capt2) * radian
+	eye := (28.0743 - 0.0128*capt) * radian
+	comg := (168.1179 + 1.3936*capt) * radian
+	omg := (42.9236 - 2.739*capt - 0.2344*capt2) * radian
 	// Now find saturnicentric ring-plane coords of the earth.
-	sb = math.Sin(capj)*math.Cos(delta)*math.Sin(alpha-capn) - math.Cos(capj)*math.Sin(delta)
-	su = math.Cos(capj)*math.Cos(delta)*math.Sin(alpha-capn) + math.Sin(capj)*math.Sin(delta)
-	cu = math.Cos(delta) * math.Cos(alpha-capn)
-	u = math.Atan2(su, cu)
-	b = math.Atan2(sb, math.Sqrt(su*su+cu*cu))
+	sb := math.Sin(capj)*math.Cos(delta)*math.Sin(alpha-capn) - math.Cos(capj)*math.Sin(delta)
+	su := math.Cos(capj)*math.Cos(delta)*math.Sin(alpha-capn) + math.Sin(capj)*math.Sin(delta)
+	cu := math.Cos(delta) * math.Cos(alpha-capn)
+	u := math.Atan2(su, cu)
+	b := math.Atan2(sb, math.Sqrt(su*su+cu*cu))
 	// And then the saturnicentric ring-plane coords of the sun.
 	su = math.Sin(eye)*math.Sin(beta) + math.Cos(eye)*math.Cos(beta)*math.Sin(lambda-comg)
 	cu = math.Cos(beta) * math.Cos(lambda-comg)
-	up = math.Atan2(su, cu)
+	up := math.Atan2(su, cu)
 	// At last, the magnitude.
 	sb = math.Sin(b)
 	mag = -8.68 + 2.52*math.Abs(up+omg-u) - 2.6*math.Abs(sb) + 1.25*(sb*sb)
@@ -2064,77 +1953,57 @@ func sat() {
 }
 
 func uran() {
-	var pturbl, pturbb, pturbr, lograd, dele, enom, vnom, nd, sl,
-		capj, capn, eye, comg, omg, sb, su, cu, u, b, up, sd, ca, sa, cy float64
-	cy = (eday - elemUran[0]) / 36525 // Per julian century
+	cy := (eday - elemUran[0]) / 36525 // Per julian century.
 	mrad = elemUran[1] + elemUran[1+6]*cy
 	ecc = elemUran[2] + elemUran[2+6]*cy
-	cy = cy / 3600 // arcsec/deg per julian century
-	incl = elemUran[3] + elemUran[3+6]*cy
-	node = elemUran[4] + elemUran[4+6]*cy
-	argp = elemUran[5] + elemUran[5+6]*cy
+	cy = cy / 3600 // arcsec/deg per julian century.
+	incl = (elemUran[3] + elemUran[3+6]*cy) * radian
+	node = (elemUran[4] + elemUran[4+6]*cy) * radian
+	argp = (elemUran[5] + elemUran[5+6]*cy)
 	anom = elemUran[6] + elemUran[6+6]*cy - argp
 	motion = elemUran[6+6] / 36525 / 3600
-	incl *= radian
-	node *= radian
 	argp *= radian
 	anom = math.Mod(anom, 360) * radian
-	enom = anom + ecc*math.Sin(anom)
+	enom := anom + ecc*math.Sin(anom)
 	for {
-		dele = (anom - enom + ecc*math.Sin(enom)) / (1 - ecc*math.Cos(enom))
+		dele := (anom - enom + ecc*math.Sin(enom)) / (1 - ecc*math.Cos(enom))
 		enom += dele
 		if math.Abs(dele) <= converge {
 			break
 		}
 	}
-	vnom = 2 * math.Atan2(math.Sqrt((1+ecc)/(1-ecc))*math.Sin(enom/2), math.Cos(enom/2))
+	vnom := 2 * math.Atan2(math.Sqrt((1+ecc)/(1-ecc))*math.Sin(enom/2), math.Cos(enom/2))
 	rad = mrad * (1 - ecc*math.Cos(enom))
 	lambda = vnom + argp
-	pturbl = 0
-	lambda += pturbl * radsec
-	pturbb = 0
-	pturbr = 0
 	// Reduce to the ecliptic.
-	nd = lambda - node
-	lambda = node + math.Atan2(math.Sin(nd)*math.Cos(incl), math.Cos(nd))
-	sl = math.Sin(incl)*math.Sin(nd) + pturbb*radsec
-	beta = math.Atan2(sl, pyth(sl))
-	lograd = pturbr * 2.30258509
-	rad *= 1 + lograd
-	lambda -= 1185 * radsec
-	beta -= 51 * radsec
+	nd := lambda - node
+	lambda = node + math.Atan2(math.Sin(nd)*math.Cos(incl), math.Cos(nd)) - 1185*radsec
+	sl := math.Sin(incl) * math.Sin(nd)
+	beta = math.Atan2(sl, pyth(sl)) - 51*radsec
 	motion *= radian * mrad * mrad / (rad * rad)
 	semi = 83.33
 	// Computation of magnitude; first, find the geocentric equatorial coordinates of Saturn.
-	sd = rad * (math.Cos(beta)*math.Sin(lambda)*math.Sin(obliq) + math.Sin(beta)*math.Cos(obliq))
-	sa = rad * (math.Cos(beta)*math.Sin(lambda)*math.Cos(obliq) - math.Sin(beta)*math.Sin(obliq))
-	ca = rad * math.Cos(beta) * math.Cos(lambda)
-	sd += zms
-	sa += yms
-	ca += xms
+	sd := rad*(math.Cos(beta)*math.Sin(lambda)*math.Sin(obliq)+math.Sin(beta)*math.Cos(obliq)) + zms
+	sa := rad*(math.Cos(beta)*math.Sin(lambda)*math.Cos(obliq)-math.Sin(beta)*math.Sin(obliq)) + yms
+	ca := rad*(math.Cos(beta)*math.Cos(lambda)) + xms
 	alpha = math.Atan2(sa, ca)
 	delta = math.Atan2(sd, math.Sqrt(sa*sa+ca*ca))
 	// Here are the necessary elements of Saturn's rings cf. Exp. Supp. p. 363ff.
-	capj = 6.9056 - 0.4322*capt
-	capn = 126.3615 + 3.9894*capt + 0.2403*capt2
-	eye = 28.0743 - 0.0128*capt
-	comg = 168.1179 + 1.3936*capt
-	omg = 42.9236 - 2.739*capt - 0.2344*capt2
-	capj *= radian
-	capn *= radian
-	eye *= radian
-	comg *= radian
-	omg *= radian
+	capj := (6.9056 - 0.4322*capt) * radian
+	capn := (126.3615 + 3.9894*capt + 0.2403*capt2) * radian
+	eye := (28.0743 - 0.0128*capt) * radian
+	comg := (168.1179 + 1.3936*capt) * radian
+	omg := (42.9236 - 2.739*capt - 0.2344*capt2) * radian
 	// Now find saturnicentric ring-plane coords of the earth.
-	sb = math.Sin(capj)*math.Cos(delta)*math.Sin(alpha-capn) - math.Cos(capj)*math.Sin(delta)
-	su = math.Cos(capj)*math.Cos(delta)*math.Sin(alpha-capn) + math.Sin(capj)*math.Sin(delta)
-	cu = math.Cos(delta) * math.Cos(alpha-capn)
-	u = math.Atan2(su, cu)
-	b = math.Atan2(sb, math.Sqrt(su*su+cu*cu))
+	sb := math.Sin(capj)*math.Cos(delta)*math.Sin(alpha-capn) - math.Cos(capj)*math.Sin(delta)
+	su := math.Cos(capj)*math.Cos(delta)*math.Sin(alpha-capn) + math.Sin(capj)*math.Sin(delta)
+	cu := math.Cos(delta) * math.Cos(alpha-capn)
+	u := math.Atan2(su, cu)
+	b := math.Atan2(sb, math.Sqrt(su*su+cu*cu))
 	// And then the saturnicentric ring-plane coords of the sun.
 	su = math.Sin(eye)*math.Sin(beta) + math.Cos(eye)*math.Cos(beta)*math.Sin(lambda-comg)
 	cu = math.Cos(beta) * math.Cos(lambda-comg)
-	up = math.Atan2(su, cu)
+	up := math.Atan2(su, cu)
 	// At last, the magnitude.
 	sb = math.Sin(b)
 	mag = -8.68 + 2.52*math.Abs(up+omg-u) - 2.6*math.Abs(sb) + 1.25*(sb*sb)
@@ -2143,77 +2012,59 @@ func uran() {
 }
 
 func nept() {
-	var pturbl, pturbb, pturbr, lograd, dele, enom, vnom, nd, sl,
-		capj, capn, eye, comg, omg, sb, su, cu, u, b, up, sd, ca, sa, cy float64
-	cy = (eday - elemNept[0]) / 36525 // Per julian century
+	cy := (eday - elemNept[0]) / 36525 // Per julian century.
 	mrad = elemNept[1] + elemNept[1+6]*cy
 	ecc = elemNept[2] + elemNept[2+6]*cy
-	cy = cy / 3600 // arcsec/deg per julian century
-	incl = elemNept[3] + elemNept[3+6]*cy
-	node = elemNept[4] + elemNept[4+6]*cy
-	argp = elemNept[5] + elemNept[5+6]*cy
+	cy = cy / 3600 // arcsec/deg per julian century.
+	incl = (elemNept[3] + elemNept[3+6]*cy) * radian
+	node = (elemNept[4] + elemNept[4+6]*cy) * radian
+	argp = (elemNept[5] + elemNept[5+6]*cy)
 	anom = elemNept[6] + elemNept[6+6]*cy - argp
 	motion = elemNept[6+6] / 36525 / 3600
-	incl *= radian
-	node *= radian
 	argp *= radian
 	anom = math.Mod(anom, 360) * radian
-	enom = anom + ecc*math.Sin(anom)
+	enom := anom + ecc*math.Sin(anom)
 	for {
-		dele = (anom - enom + ecc*math.Sin(enom)) / (1 - ecc*math.Cos(enom))
+		dele := (anom - enom + ecc*math.Sin(enom)) / (1 - ecc*math.Cos(enom))
 		enom += dele
 		if math.Abs(dele) <= converge {
 			break
 		}
 	}
-	vnom = 2 * math.Atan2(math.Sqrt((1+ecc)/(1-ecc))*math.Sin(enom/2), math.Cos(enom/2))
+	vnom := 2 * math.Atan2(math.Sqrt((1+ecc)/(1-ecc))*math.Sin(enom/2), math.Cos(enom/2))
 	rad = mrad * (1 - ecc*math.Cos(enom))
 	lambda = vnom + argp
-	pturbl = 0
-	lambda += pturbl * radsec
-	pturbb = 0
-	pturbr = 0
 	// Reduce to the ecliptic.
-	nd = lambda - node
+	nd := lambda - node
 	lambda = node + math.Atan2(math.Sin(nd)*math.Cos(incl), math.Cos(nd))
-	sl = math.Sin(incl)*math.Sin(nd) + pturbb*radsec
+	sl := math.Sin(incl) * math.Sin(nd)
 	beta = math.Atan2(sl, pyth(sl))
-	lograd = pturbr * 2.30258509
-	rad *= 1 + lograd
 	lambda -= 1185 * radsec
 	beta -= 51 * radsec
 	motion *= radian * mrad * mrad / (rad * rad)
 	semi = 83.33
 	// Computation of magnitude; first, find the geocentric equatorial coordinates of Saturn.
-	sd = rad * (math.Cos(beta)*math.Sin(lambda)*math.Sin(obliq) + math.Sin(beta)*math.Cos(obliq))
-	sa = rad * (math.Cos(beta)*math.Sin(lambda)*math.Cos(obliq) - math.Sin(beta)*math.Sin(obliq))
-	ca = rad * math.Cos(beta) * math.Cos(lambda)
-	sd += zms
-	sa += yms
-	ca += xms
+	sd := rad*(math.Cos(beta)*math.Sin(lambda)*math.Sin(obliq)+math.Sin(beta)*math.Cos(obliq)) + zms
+	sa := rad*(math.Cos(beta)*math.Sin(lambda)*math.Cos(obliq)-math.Sin(beta)*math.Sin(obliq)) + yms
+	ca := rad*(math.Cos(beta)*math.Cos(lambda)) + xms
 	alpha = math.Atan2(sa, ca)
 	delta = math.Atan2(sd, math.Sqrt(sa*sa+ca*ca))
 	// Here are the necessary elements of Saturn's rings cf. Exp. Supp. p. 363ff.
-	capj = 6.9056 - 0.4322*capt
-	capn = 126.3615 + 3.9894*capt + 0.2403*capt2
-	eye = 28.0743 - 0.0128*capt
-	comg = 168.1179 + 1.3936*capt
-	omg = 42.9236 - 2.739*capt - 0.2344*capt2
-	capj *= radian
-	capn *= radian
-	eye *= radian
-	comg *= radian
-	omg *= radian
+	capj := (6.9056 - 0.4322*capt) * radian
+	capn := (126.3615 + 3.9894*capt + 0.2403*capt2) * radian
+	eye := (28.0743 - 0.0128*capt) * radian
+	comg := (168.1179 + 1.3936*capt) * radian
+	omg := (42.9236 - 2.739*capt - 0.2344*capt2) * radian
 	// Now find saturnicentric ring-plane coords of the earth.
-	sb = math.Sin(capj)*math.Cos(delta)*math.Sin(alpha-capn) - math.Cos(capj)*math.Sin(delta)
-	su = math.Cos(capj)*math.Cos(delta)*math.Sin(alpha-capn) + math.Sin(capj)*math.Sin(delta)
-	cu = math.Cos(delta) * math.Cos(alpha-capn)
-	u = math.Atan2(su, cu)
-	b = math.Atan2(sb, math.Sqrt(su*su+cu*cu))
+	sb := math.Sin(capj)*math.Cos(delta)*math.Sin(alpha-capn) - math.Cos(capj)*math.Sin(delta)
+	su := math.Cos(capj)*math.Cos(delta)*math.Sin(alpha-capn) + math.Sin(capj)*math.Sin(delta)
+	cu := math.Cos(delta) * math.Cos(alpha-capn)
+	u := math.Atan2(su, cu)
+	b := math.Atan2(sb, math.Sqrt(su*su+cu*cu))
 	// And then the saturnicentric ring-plane coords of the sun.
 	su = math.Sin(eye)*math.Sin(beta) + math.Cos(eye)*math.Cos(beta)*math.Sin(lambda-comg)
 	cu = math.Cos(beta) * math.Cos(lambda-comg)
-	up = math.Atan2(su, cu)
+	up := math.Atan2(su, cu)
 	// At last, the magnitude.
 	sb = math.Sin(b)
 	mag = -8.68 + 2.52*math.Abs(up+omg-u) - 2.6*math.Abs(sb) + 1.25*(sb*sb)
@@ -2222,77 +2073,59 @@ func nept() {
 }
 
 func plut() {
-	var pturbl, pturbb, pturbr, lograd, dele, enom, vnom, nd, sl,
-		capj, capn, eye, comg, omg, sb, su, cu, u, b, up, sd, ca, sa, cy float64
-	cy = (eday - elemPlut[0]) / 36525 // Per julian century
+	cy := (eday - elemPlut[0]) / 36525 // Per julian century.
 	mrad = elemPlut[1] + elemPlut[1+6]*cy
 	ecc = elemPlut[2] + elemPlut[2+6]*cy
-	cy = cy / 3600 // arcsec/deg per julian century
-	incl = elemPlut[3] + elemPlut[3+6]*cy
-	node = elemPlut[4] + elemPlut[4+6]*cy
-	argp = elemPlut[5] + elemPlut[5+6]*cy
+	cy = cy / 3600 // arcsec/deg per julian century.
+	incl = (elemPlut[3] + elemPlut[3+6]*cy) * radian
+	node = (elemPlut[4] + elemPlut[4+6]*cy) * radian
+	argp = (elemPlut[5] + elemPlut[5+6]*cy)
 	anom = elemPlut[6] + elemPlut[6+6]*cy - argp
 	motion = elemPlut[6+6] / 36525 / 3600
-	incl *= radian
-	node *= radian
 	argp *= radian
 	anom = math.Mod(anom, 360) * radian
-	enom = anom + ecc*math.Sin(anom)
+	enom := anom + ecc*math.Sin(anom)
 	for {
-		dele = (anom - enom + ecc*math.Sin(enom)) / (1 - ecc*math.Cos(enom))
+		dele := (anom - enom + ecc*math.Sin(enom)) / (1 - ecc*math.Cos(enom))
 		enom += dele
 		if math.Abs(dele) <= converge {
 			break
 		}
 	}
-	vnom = 2 * math.Atan2(math.Sqrt((1+ecc)/(1-ecc))*math.Sin(enom/2), math.Cos(enom/2))
+	vnom := 2 * math.Atan2(math.Sqrt((1+ecc)/(1-ecc))*math.Sin(enom/2), math.Cos(enom/2))
 	rad = mrad * (1 - ecc*math.Cos(enom))
 	lambda = vnom + argp
-	pturbl = 0
-	lambda += pturbl * radsec
-	pturbb = 0
-	pturbr = 0
 	// Reduce to the ecliptic.
-	nd = lambda - node
+	nd := lambda - node
 	lambda = node + math.Atan2(math.Sin(nd)*math.Cos(incl), math.Cos(nd))
-	sl = math.Sin(incl)*math.Sin(nd) + pturbb*radsec
+	sl := math.Sin(incl) * math.Sin(nd)
 	beta = math.Atan2(sl, pyth(sl))
-	lograd = pturbr * 2.30258509
-	rad *= 1 + lograd
 	lambda -= 1185 * radsec
 	beta -= 51 * radsec
 	motion *= radian * mrad * mrad / (rad * rad)
 	semi = 83.33
 	// Computation of magnitude; first, find the geocentric equatorial coordinates of Saturn.
-	sd = rad * (math.Cos(beta)*math.Sin(lambda)*math.Sin(obliq) + math.Sin(beta)*math.Cos(obliq))
-	sa = rad * (math.Cos(beta)*math.Sin(lambda)*math.Cos(obliq) - math.Sin(beta)*math.Sin(obliq))
-	ca = rad * math.Cos(beta) * math.Cos(lambda)
-	sd += zms
-	sa += yms
-	ca += xms
+	sd := rad*(math.Cos(beta)*math.Sin(lambda)*math.Sin(obliq)+math.Sin(beta)*math.Cos(obliq)) + zms
+	sa := rad*(math.Cos(beta)*math.Sin(lambda)*math.Cos(obliq)-math.Sin(beta)*math.Sin(obliq)) + yms
+	ca := rad*(math.Cos(beta)*math.Cos(lambda)) + xms
 	alpha = math.Atan2(sa, ca)
 	delta = math.Atan2(sd, math.Sqrt(sa*sa+ca*ca))
 	// Here are the necessary elements of Saturn's rings cf. Exp. Supp. p. 363ff.
-	capj = 6.9056 - 0.4322*capt
-	capn = 126.3615 + 3.9894*capt + 0.2403*capt2
-	eye = 28.0743 - 0.0128*capt
-	comg = 168.1179 + 1.3936*capt
-	omg = 42.9236 - 2.739*capt - 0.2344*capt2
-	capj *= radian
-	capn *= radian
-	eye *= radian
-	comg *= radian
-	omg *= radian
+	capj := (6.9056 - 0.4322*capt) * radian
+	capn := (126.3615 + 3.9894*capt + 0.2403*capt2) * radian
+	eye := (28.0743 - 0.0128*capt) * radian
+	comg := (168.1179 + 1.3936*capt) * radian
+	omg := (42.9236 - 2.739*capt - 0.2344*capt2) * radian
 	// Now find saturnicentric ring-plane coords of the earth.
-	sb = math.Sin(capj)*math.Cos(delta)*math.Sin(alpha-capn) - math.Cos(capj)*math.Sin(delta)
-	su = math.Cos(capj)*math.Cos(delta)*math.Sin(alpha-capn) + math.Sin(capj)*math.Sin(delta)
-	cu = math.Cos(delta) * math.Cos(alpha-capn)
-	u = math.Atan2(su, cu)
-	b = math.Atan2(sb, math.Sqrt(su*su+cu*cu))
+	sb := math.Sin(capj)*math.Cos(delta)*math.Sin(alpha-capn) - math.Cos(capj)*math.Sin(delta)
+	su := math.Cos(capj)*math.Cos(delta)*math.Sin(alpha-capn) + math.Sin(capj)*math.Sin(delta)
+	cu := math.Cos(delta) * math.Cos(alpha-capn)
+	u := math.Atan2(su, cu)
+	b := math.Atan2(sb, math.Sqrt(su*su+cu*cu))
 	// And then the saturnicentric ring-plane coords of the sun.
 	su = math.Sin(eye)*math.Sin(beta) + math.Cos(eye)*math.Cos(beta)*math.Sin(lambda-comg)
 	cu = math.Cos(beta) * math.Cos(lambda-comg)
-	up = math.Atan2(su, cu)
+	up := math.Atan2(su, cu)
 	// At last, the magnitude.
 	sb = math.Sin(b)
 	mag = -8.68 + 2.52*math.Abs(up+omg-u) - 2.6*math.Abs(sb) + 1.25*(sb*sb)
@@ -2310,13 +2143,12 @@ type cometElem struct {
 }
 
 func comet() {
-	var pturbl, pturbb, pturbr, lograd, dele, enom, vnom, nd, sl float64
-	// 153P/Ikeya–Zhang
+	// 153P/Ikeya–Zhang.
 	t := time.Date(2002, 3, 18, 23, 28, 53, 760000000, time.UTC)
 	elem := cometElem{t: timeToJulian(&t) + 2415020, q: 0.5070601, e: 0.990111, i: 28.12106, w: 34.6666, o: 93.1206}
 	ecc = elem.e
-	if ecc > maxe {
-		ecc = maxe
+	if ecc > 0.999 { // Can't do hyperbolas.
+		ecc = 0.999
 	}
 	incl = elem.i * radian
 	node = (elem.o + 0.4593) * radian
@@ -2324,28 +2156,22 @@ func comet() {
 	mrad = elem.q / (1 - ecc)
 	motion = 0.01720209895 * math.Sqrt(1/(mrad*mrad*mrad)) / radian
 	anom = (eday - (elem.t - 2415020)) * motion * radian
-	enom = anom + ecc*math.Sin(anom)
+	enom := anom + ecc*math.Sin(anom)
 	for {
-		dele = (anom - enom + ecc*math.Sin(enom)) / (1 - ecc*math.Cos(enom))
+		dele := (anom - enom + ecc*math.Sin(enom)) / (1 - ecc*math.Cos(enom))
 		enom += dele
 		if math.Abs(dele) <= converge {
 			break
 		}
 	}
-	vnom = 2 * math.Atan2(math.Sqrt((1+ecc)/(1-ecc))*math.Sin(enom/2), math.Cos(enom/2))
+	vnom := 2 * math.Atan2(math.Sqrt((1+ecc)/(1-ecc))*math.Sin(enom/2), math.Cos(enom/2))
 	rad = mrad * (1 - ecc*math.Cos(enom))
 	lambda = vnom + argp
-	pturbl = 0
-	lambda += pturbl * radsec
-	pturbb = 0
-	pturbr = 0
 	// Reduce to the ecliptic.
-	nd = lambda - node
+	nd := lambda - node
 	lambda = node + math.Atan2(math.Sin(nd)*math.Cos(incl), math.Cos(nd))
-	sl = math.Sin(incl)*math.Sin(nd) + pturbb*radsec
+	sl := math.Sin(incl) * math.Sin(nd)
 	beta = math.Atan2(sl, math.Sqrt(1-sl*sl))
-	lograd = pturbr * 2.30258509
-	rad *= 1 + lograd
 	motion *= radian * mrad * mrad / (rad * rad)
 	semi = 0
 	mag = 5.47 + 6.1/2.303*math.Log(rad)
@@ -2375,7 +2201,6 @@ func pstime(d float64) {
 }
 
 func setime(d float64) {
-	var x, xm, ym, zm float64
 	eday = d + ΔT/86400
 	wlong = awlong + 15*ΔT*radsec
 	capt = eday / 36524.22e0
@@ -2385,15 +2210,15 @@ func setime(d float64) {
 	eday += 0.1
 	sun()
 	srad = rad
-	xm = rad * math.Cos(beta) * math.Cos(lambda)
-	ym = rad * math.Cos(beta) * math.Sin(lambda)
-	zm = rad * math.Sin(beta)
+	xm := rad * math.Cos(beta) * math.Cos(lambda)
+	ym := rad * math.Cos(beta) * math.Sin(lambda)
+	zm := rad * math.Sin(beta)
 	eday -= 0.1
 	sun()
 	xms = rad * math.Cos(beta) * math.Cos(lambda)
 	yms = rad * math.Cos(beta) * math.Sin(lambda)
 	zms = rad * math.Sin(beta)
-	x = 0.057756
+	x := 0.057756
 	xdot = x * (xm - xms)
 	ydot = x * (ym - yms)
 	zdot = x * (zm - zms)
@@ -2406,21 +2231,12 @@ func nutate() {
 	// the equatorial bulge of the earth. phi and eps are the two angles
 	// which specify the true pole with respect to the mean pole. All
 	// coefficients are from Exp. Supp. pp.44-45.
-	var msun, mnom, noded, dmoon float64
-	mnom = 296.104608 + 13.0649924465*eday + 9.192e-3*capt2 + 14.38e-6*capt3
-	mnom *= radian
-	msun = 358.475833 + 0.9856002669*eday - 0.15e-3*capt2 - 3.33e-6*capt3
-	msun *= radian
-	noded = 11.250889 + 13.229350449*eday - 3.211e-3*capt2 - 0.33e-6*capt3
-	noded *= radian
-	dmoon = 350.737486 + 12.1907491914*eday - 1.436e-3*capt2 + 1.89e-6*capt3
-	dmoon *= radian
+	mnom := (296.104608 + 13.0649924465*eday + 9.192e-3*capt2 + 14.38e-6*capt3) * radian
+	msun := (358.475833 + 0.9856002669*eday - 0.15e-3*capt2 - 3.33e-6*capt3) * radian
+	noded = (11.250889 + 13.229350449*eday - 3.211e-3*capt2 - 0.33e-6*capt3) * radian
+	dmoon := (350.737486 + 12.1907491914*eday - 1.436e-3*capt2 + 1.89e-6*capt3) * radian
 	node = 259.183275 - 0.0529539222*eday + 2.078e-3*capt2 + 2.22e-6*capt3
 	node *= radian
-	phi = 0
-	eps = 0
-	dphi = 0
-	deps = 0
 	phi = -(17.2327 + 0.01737*capt) * math.Sin(node)
 	phi += sinadd(nutf[0], nutc[0], []float64{node, noded, dmoon, msun})
 	eps = cosadd(nutf[1], nutc[1], []float64{node, noded, dmoon, msun})
@@ -2430,11 +2246,9 @@ func nutate() {
 	eps = (eps + deps) * radsec
 	dphi *= radsec
 	deps *= radsec
-	obliq = 23.452294 - 0.0130125*capt - 1.64e-6*capt2 + 0.503e-6*capt3
-	obliq *= radian
+	obliq = (23.452294 - 0.0130125*capt - 1.64e-6*capt2 + 0.503e-6*capt3) * radian
 	tobliq = obliq + eps
-	gst = 99.690983 + 360.9856473354*eday + 0.000387*capt2
-	gst -= 180
+	gst = 99.690983 + 360.9856473354*eday + 0.000387*capt2 - 180
 	gst = math.Mod(gst, 360)
 	if gst < 0 {
 		gst += 360
@@ -2573,12 +2387,12 @@ func search() error {
 			if t >= 0 {
 				t = rise(*o, 0) - rise(osun, 0)
 				if t < 0 {
-					t += npts
+					t += numPoints
 				}
-				if t > npts {
-					t -= npts
+				if t > numPoints {
+					t -= numPoints
 				}
-				if t > npts/2 {
+				if t > numPoints/2 {
 					err := event(evt{s: fmt.Sprintf("Morning elongation of %s", o.fname), flag: signif})
 					if err != nil {
 						return err
@@ -2673,7 +2487,7 @@ func search() error {
 			}
 		}
 	}
-	if *oflag {
+	if *searchOccult {
 		if err := stars(); err != nil {
 			return err
 		}
@@ -2713,7 +2527,7 @@ func solstice(n int) float64 {
 		if n == 0 {
 			d2 -= math.Pi
 			if d2 < -math.Pi {
-				d2 += pipi
+				d2 += twoPi
 			}
 		}
 		if i >= 1 && d3 >= d1 && d3 < d2 {
@@ -2752,7 +2566,7 @@ func event(e evt) error {
 	if e.flag&light > 0 && sunel(e.tim) < 0 {
 		return nil
 	}
-	if len(events) >= nevents {
+	if len(events) >= 100 {
 		return errors.New("too many events")
 	}
 	events = append(events, e)
@@ -2772,7 +2586,7 @@ func evflush() {
 	})
 	for _, e := range events {
 		if e.flag&ptime > 0 {
-			fmt.Printf("%s%s\n", e.s, julianToTime(day+e.tim*deld).Format(time.TimeOnly+" MST"))
+			fmt.Printf("%s%s\n", e.s, julianToTime(day+e.tim*stepSize).Format(time.TimeOnly+" MST"))
 		} else {
 			fmt.Printf("%s\n", e.s)
 		}
@@ -2781,7 +2595,7 @@ func evflush() {
 
 func sunel(t float64) float64 {
 	i := int(t)
-	if i < 0 || i > npts {
+	if i < 0 || i > numPoints {
 		return -90
 	}
 	return osun.point[i].el + (t-float64(i))*(osun.point[i+1].el-osun.point[i].el)
@@ -2809,7 +2623,7 @@ func occult(o1, o2 obj2) error {
 		return nil
 	}
 	ok = false
-	n := 2880 * per / npts // 1 min steps
+	n := 2880 * iVal / numPoints // 1 min steps.
 	i -= 2
 	set3pt(o1, i, &occ1)
 	set3pt(o2, i, &occ2)
@@ -2838,7 +2652,7 @@ func occult(o1, o2 obj2) error {
 	x = 0
 	var xo1, xo2 obj2
 	for i = range 3 {
-		setime(day + deld*(di+x))
+		setime(day + stepSize*(di+x))
 		o1.f()
 		setobj(&xo1.point[i])
 		o2.f()
@@ -2931,15 +2745,15 @@ func set3pt(o obj2, i int, oc *occt) {
 	oc.del0.semi2 = p1.semi2
 	oc.del0.el = p1.el
 	a := p2.ra - p1.ra
-	oc.del1.ra = pinorm(a)
+	oc.del1.ra = piNorm(a)
 	a = p2.decl2 - p1.decl2
-	oc.del1.decl2 = pinorm(a)
+	oc.del1.decl2 = piNorm(a)
 	oc.del1.semi2 = p2.semi2 - p1.semi2
 	oc.del1.el = p2.el - p1.el
 	a = p1.ra + p3.ra - 2*p2.ra
-	oc.del2.ra = pinorm(a) / 2
+	oc.del2.ra = piNorm(a) / 2
 	a = p1.decl2 + p3.decl2 - 2*p2.decl2
-	oc.del2.decl2 = pinorm(a) / 2
+	oc.del2.decl2 = piNorm(a) / 2
 	oc.del2.semi2 = (p1.semi2 + p3.semi2 - 2*p2.semi2) / 2
 	oc.del2.el = (p1.el + p3.el - 2*p2.el) / 2
 }
@@ -2956,11 +2770,11 @@ func stars() error {
 	sd := 1000 * radsec
 	lomoon := omoon.point[0].ra - sd
 	if lomoon < 0 {
-		lomoon += pipi
+		lomoon += twoPi
 	}
-	himoon := omoon.point[npts+1].ra + sd
-	if himoon > pipi {
-		himoon -= pipi
+	himoon := omoon.point[numPoints+1].ra + sd
+	if himoon > twoPi {
+		himoon -= twoPi
 	}
 	lomoon *= 12 / math.Pi
 	himoon *= 12 / math.Pi
