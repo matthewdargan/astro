@@ -122,33 +122,28 @@ var (
 	interval     = flag.Float64("C", iVal, "used with -c, set the interval to d days")
 	startDate    = flag.String("d", "", "read start date")
 	eclipse      = flag.String("e", "", "report distance between the centers of objects")
-	initLoc      = flag.String("l", "", "read latitude, longitude, and elevation")
+	loc          = flag.String("l", "", "read latitude, longitude, and elevation")
 	dt           = flag.Float64("t", 0, "read ΔT")
 
 	root = os.Getenv("PLAN9")
 	wlong, awlong, nlat, elev,
 	obliq, phi, eps, tobliq,
-	dphi, deps,
 	day, eday, capt, capt2, capt3, gst,
 	ΔT, erad, glat,
-	xms, yms, zms,
-	xdot, ydot, zdot,
-	ecc, incl, node, argp, mrad, anom, motion,
-	lambda, beta, rad, mag, semi,
+	xms, yms, zms, xdot, ydot, zdot,
+	motion, lambda, beta, rad, mag, semi,
 	alpha, delta, hp,
-	ra, decl, semi2,
-	lha, decl2, lmb2,
-	az, el,
+	ra, semi2, lha, decl2, lmb2, az, el,
 	meday, seday, mhp, salph, sdelt, srad float64
 	sao    string
 	events []evt
-	osun   = obj2{name: "sun", fname: "The sun", f: fsun}
-	omoon  = obj2{name: "moon", fname: "The moon", f: moon}
-	oshad  = obj2{name: "shadow", fname: "The shadow", f: shad}
-	omerc  = obj2{name: "mercury", fname: "Mercury", f: merc}
-	ovenus = obj2{name: "venus", fname: "Venus", f: venus}
+	oSun   = obj2{name: "sun", fname: "The sun", f: fSun}
+	oMoon  = obj2{name: "moon", fname: "The moon", f: moon}
+	oShad  = obj2{name: "shadow", fname: "The shadow", f: shad}
+	oMerc  = obj2{name: "mercury", fname: "Mercury", f: merc}
+	oVenus = obj2{name: "venus", fname: "Venus", f: venus}
 	objs   = []*obj2{
-		&osun, &omoon, &oshad, &omerc, &ovenus,
+		&oSun, &oMoon, &oShad, &oMerc, &oVenus,
 		{name: "mars", fname: "Mars", f: mars},
 		{name: "jupiter", fname: "Jupiter", f: jup},
 		{name: "saturn", fname: "Saturn", f: sat},
@@ -157,7 +152,7 @@ var (
 		{name: "pluto", fname: "Pluto", f: plut},
 		{name: "comet", fname: "Comet", f: comet},
 	}
-	ostar      obj2
+	oStar      obj2
 	occ        obj3
 	occ1, occ2 occt
 	moonTabs   = [...][]moonTab{
@@ -1244,20 +1239,20 @@ func main() {
 		fmt.Printf("Julian date: %.4f\n", day)
 	}
 	ΔT = deltaT(day)
-	ostar = obj2{name: "Star", f: star}
-	var eobjs [2]obj2
+	oStar = obj2{name: "Star", f: star}
+	eObjs := [2]*obj2{{}, {}}
 	if *eclipse != "" {
-		if _, err := fmt.Sscanf(*eclipse, "%s %s", &eobjs[0].name, &eobjs[1].name); err != nil {
+		if _, err := fmt.Sscanf(*eclipse, "%s %s", &eObjs[0].name, &eObjs[1].name); err != nil {
 			log.Fatal("failed to parse eclipse objects")
 		}
-		for i, e := range eobjs {
+		for i, e := range eObjs {
 			j := slices.IndexFunc(objs, func(o *obj2) bool {
 				return e.name == o.name || e.name == o.fname
 			})
 			if j < 0 {
 				log.Fatal("failed to parse eclipse objects")
 			}
-			eobjs[i] = *objs[j]
+			eObjs[i] = objs[j]
 		}
 	}
 	if root == "" {
@@ -1267,8 +1262,8 @@ func main() {
 	nlat = (40 + 41.06/60) * radian
 	wlong = (74 + 23.98/60) * radian
 	elev = 150 * metersToFeet
-	if *initLoc != "" {
-		if err = parseLocation(*initLoc); err != nil {
+	if *loc != "" {
+		if err = parseLocation(*loc); err != nil {
 			log.Fatal("failed to parse location")
 		}
 	} else {
@@ -1283,31 +1278,31 @@ func main() {
 		d := day
 		fmt.Print(julianToTime(d))
 		if *printPos || *eclipse != "" {
-			pstime(d)
+			psTime(d)
 		}
 		fmt.Println()
 		for i := range objs[0].point {
-			setime(d)
+			seTime(d)
 			for j := range objs {
 				objs[j].f()
-				setobj(&objs[j].point[i])
+				obj(&objs[j].point[i])
 				if *printPos {
-					if *includeComet && objs[j].name == "Comet" {
+					if *includeComet && objs[j].name != "comet" {
 						continue
 					}
-					output(objs[j].name, objs[j].point[i])
+					output(objs[j].fname, objs[j].point[i])
 				}
 			}
 			if *eclipse != "" {
-				d = dist(eobjs[0].point[i], eobjs[1].point[i])
-				fmt.Printf("dist %s to %s = %.4f\n", eobjs[0].name, eobjs[1].name, d)
+				d = dist(eObjs[0].point[i], eObjs[1].point[i])
+				fmt.Printf("dist %s to %s = %.4f\n", eObjs[0].fname, eObjs[1].fname, d)
 			}
 			if *printPos || *eclipse != "" {
 				break
 			}
 			d += stepSize
 		}
-		if !*printPos || *eclipse == "" {
+		if !*printPos && *eclipse == "" {
 			if err := search(); err != nil {
 				log.Fatal(err)
 			}
@@ -1352,7 +1347,7 @@ func parseLocation(s string) error {
 	return nil
 }
 
-func fsun() {
+func fSun() {
 	beta = 0
 	rad = 0
 	lambda = 0
@@ -1366,10 +1361,8 @@ func fsun() {
 }
 
 func sun() {
-	ecc = 0.01675104 - 4.18e-5*capt - 1.26e-7*capt2
-	argp = (281.220833 + 0.0000470684*eday + 0.000453*capt2 + 0.000003*capt3) * radian
-	mrad = 1
-	anom = 358.475845 + 0.9856002670*eday - 0.00015*capt2 - 0.000003*capt3
+	argp := (281.220833 + 0.0000470684*eday + 0.000453*capt2 + 0.000003*capt3) * radian
+	anom := 358.475845 + 0.9856002670*eday - 0.00015*capt2 - 0.000003*capt3
 	motion = 0.9856473354
 	dmoon := 350.737681 + 12.1907491914*eday - 0.001436*capt2
 	gmoon := 11.250889 + 13.229350449*eday - 0.003212*capt2
@@ -1382,8 +1375,8 @@ func sun() {
 	dmoon = math.Mod(dmoon, 360) * radian
 	gmoon = math.Mod(gmoon, 360) * radian
 	mmoon = math.Mod(mmoon, 360) * radian
-	anom += cosadd(sunf[0], sunc[0], []float64{mmars, merth, mven, mjup}) / 3600
-	anom += sinadd(sunf[1], sunc[1], []float64{mmars, merth, mven, mjup, 0.07884 * capt}) / 3600
+	anom += cosAdd(sunf[0], sunc[0], []float64{mmars, merth, mven, mjup}) / 3600
+	anom += sinAdd(sunf[1], sunc[1], []float64{mmars, merth, mven, mjup, 0.07884 * capt}) / 3600
 	anom = math.Mod(anom, 360) * radian
 	// Computation of elliptic orbit.
 	lambda = anom + argp
@@ -1397,14 +1390,14 @@ func sun() {
 		(91.38e-6-0.46e-6*capt)*math.Cos(2*anom) -
 		(1.45e-6-0.01e-6*capt)*math.Cos(3*anom) -
 		0.02e-6*math.Cos(4*anom)
-	pturbl = cosadd(sunf[2], sunc[2], []float64{mmars, merth, mven, mjup, msat})
-	pturbl += sinadd(sunf[3], sunc[3], []float64{dmoon, mmoon, merth}) + 0.9
+	pturbl = cosAdd(sunf[2], sunc[2], []float64{mmars, merth, mven, mjup, msat})
+	pturbl += sinAdd(sunf[3], sunc[3], []float64{dmoon, mmoon, merth}) + 0.9
 	pturbl *= radsec
-	pturbb := cosadd(sunf[4], sunc[4], []float64{merth, mven, mjup})
-	pturbb += sinadd(sunf[5], sunc[5], []float64{gmoon, mmoon, dmoon})
+	pturbb := cosAdd(sunf[4], sunc[4], []float64{merth, mven, mjup})
+	pturbb += sinAdd(sunf[5], sunc[5], []float64{gmoon, mmoon, dmoon})
 	pturbb *= radsec
-	pturbr := cosadd(sunf[6], sunc[6], []float64{mmars, merth, mven, mjup, msat})
-	pturbr += cosadd(sunf[7], sunc[7], []float64{dmoon, mmoon, merth})
+	pturbr := cosAdd(sunf[6], sunc[6], []float64{mmars, merth, mven, mjup, msat})
+	pturbr += cosAdd(sunf[7], sunc[7], []float64{dmoon, mmoon, merth})
 	lambda += pturbl
 	if lambda > twoPi {
 		lambda -= twoPi
@@ -1412,7 +1405,7 @@ func sun() {
 	beta += pturbb
 	lograd = (lograd + pturbr) * 2.30258509
 	rad = 1 + lograd*(1+lograd*(0.5+lograd/6))
-	motion *= radian * mrad * mrad / (rad * rad)
+	motion *= radian / (rad * rad)
 	semi = 961.182
 	if *searchOccult {
 		semi = 959.63
@@ -1464,11 +1457,10 @@ func helio() {
 func geo() {
 	// Convert to local hour angle and declination.
 	lha = gst - alpha - wlong
-	decl = delta
 	// Compute diurnal parallax (requires geocentric latitude).
-	sa := math.Cos(decl) * math.Sin(lha)
-	ca := math.Cos(decl)*math.Cos(lha) - erad*math.Cos(glat)*math.Sin(hp)
-	sd := math.Sin(decl) - erad*math.Sin(glat)*math.Sin(hp)
+	sa := math.Cos(delta) * math.Sin(lha)
+	ca := math.Cos(delta)*math.Cos(lha) - erad*math.Cos(glat)*math.Sin(hp)
+	sd := math.Sin(delta) - erad*math.Sin(glat)*math.Sin(hp)
 	lha = math.Atan2(sa, ca)
 	decl2 = math.Atan2(sd, math.Sqrt(sa*sa+ca*ca))
 	f := math.Sqrt(sa*sa + ca*ca + sd*sd)
@@ -1497,8 +1489,8 @@ func moon() {
 	// The fundamental elements - all referred to the epoch of Jan 0.5, 1900 and
 	// to the mean equinox of date.
 	dlong := 270.434164 + 13.1763965268*eday - 0.001133*capt2 + 2e-6*capt3
-	argp = 334.329556 + 0.1114040803*eday - 0.010325*capt2 - 12e-6*capt3
-	node = 259.183275 - 0.0529539222*eday + 0.002078*capt2 + 2e-6*capt3
+	argp := 334.329556 + 0.1114040803*eday - 0.010325*capt2 - 12e-6*capt3
+	node := 259.183275 - 0.0529539222*eday + 0.002078*capt2 + 2e-6*capt3
 	lsun := 279.696678 + 0.9856473354*eday + 0.000303*capt2
 	psun := 281.220833 + 0.0000470684*eday + 0.000453*capt2 + 3e-6*capt3
 	dlong = math.Mod(dlong, 360)
@@ -1508,7 +1500,6 @@ func moon() {
 	psun = math.Mod(psun, 360)
 	eccm := 22639.55
 	eccs := 0.01675104 - 0.0000418*capt
-	incl = 18461.4
 	cpe := 124.986
 	chp := 3422.451
 	// Some subsidiary elements - they are all longitudes and they are referred
@@ -1685,7 +1676,7 @@ func abs(x int) int {
 
 func shad() {
 	if seday != eday {
-		fsun()
+		fSun()
 	}
 	if meday != eday {
 		moon()
@@ -1698,12 +1689,12 @@ func shad() {
 }
 
 func merc() {
-	ecc = 0.20561421 + 0.00002046*capt - 0.03e-6*capt2
-	incl = (7.0028806 + 0.0018608*capt - 18.3e-6*capt2) * radian
-	node = (47.145944 + 1.185208*capt + 0.0001739*capt2) * radian
-	argp = (75.899697 + 1.55549*capt + 0.0002947*capt2) * radian
-	mrad = 0.3870986
-	anom = 102.279381 + 4.0923344364*eday + 6.7e-6*capt2
+	ecc := 0.20561421 + 0.00002046*capt - 0.03e-6*capt2
+	incl := (7.0028806 + 0.0018608*capt - 18.3e-6*capt2) * radian
+	node := (47.145944 + 1.185208*capt + 0.0001739*capt2) * radian
+	argp := (75.899697 + 1.55549*capt + 0.0002947*capt2) * radian
+	mrad := 0.3870986
+	anom := 102.279381 + 4.0923344364*eday + 6.7e-6*capt2
 	motion = 4.0923770233
 	q0 := (102.28 + 4.092334429*eday) * radian
 	v0 := (212.536 + 1.602126105*eday) * radian
@@ -1721,13 +1712,13 @@ func merc() {
 	}
 	vnom := 2 * math.Atan2(math.Sqrt((1+ecc)/(1-ecc))*math.Sin(enom/2), math.Cos(enom/2))
 	rad = mrad * (1 - ecc*math.Cos(enom))
-	pturbl := cosadd(mercf[0], mercc[0], []float64{q0, -v0})
-	pturbl += cosadd(mercf[1], mercc[1], []float64{q0, -t0})
-	pturbl += cosadd(mercf[2], mercc[2], []float64{q0, -j0})
-	pturbl += cosadd(mercf[3], mercc[3], []float64{q0, -s0})
-	pturbr := cosadd(mercf[4], mercc[4], []float64{q0, -v0})
-	pturbr += cosadd(mercf[5], mercc[5], []float64{q0, -t0})
-	pturbr += cosadd(mercf[6], mercc[6], []float64{q0, -j0})
+	pturbl := cosAdd(mercf[0], mercc[0], []float64{q0, -v0})
+	pturbl += cosAdd(mercf[1], mercc[1], []float64{q0, -t0})
+	pturbl += cosAdd(mercf[2], mercc[2], []float64{q0, -j0})
+	pturbl += cosAdd(mercf[3], mercc[3], []float64{q0, -s0})
+	pturbr := cosAdd(mercf[4], mercc[4], []float64{q0, -v0})
+	pturbr += cosAdd(mercf[5], mercc[5], []float64{q0, -t0})
+	pturbr += cosAdd(mercf[6], mercc[6], []float64{q0, -j0})
 	// Reduce to the ecliptic.
 	lambda = vnom + argp + pturbl*radsec
 	nd := lambda - node
@@ -1747,15 +1738,15 @@ func merc() {
 	geo()
 }
 
-func cosadd(caf []float64, cac []int, coefs []float64) float64 {
-	return trigadd(math.Cos, caf, cac, coefs)
+func cosAdd(caf []float64, cac []int, coefs []float64) float64 {
+	return trigAdd(math.Cos, caf, cac, coefs)
 }
 
-func sinadd(caf []float64, cac []int, coefs []float64) float64 {
-	return trigadd(math.Sin, caf, cac, coefs)
+func sinAdd(caf []float64, cac []int, coefs []float64) float64 {
+	return trigAdd(math.Sin, caf, cac, coefs)
 }
 
-func trigadd(f func(float64) float64, caf []float64, cac []int, coefs []float64) float64 {
+func trigAdd(f func(float64) float64, caf []float64, cac []int, coefs []float64) float64 {
 	var sum float64
 	var j int
 	for i := 0; i < len(caf); i += 2 {
@@ -1771,12 +1762,12 @@ func trigadd(f func(float64) float64, caf []float64, cac []int, coefs []float64)
 
 func venus() {
 	// Mean orbital elements.
-	ecc = 0.00682069 - 0.00004774*capt + 0.091e-6*capt2
-	incl = (3.393631 + 0.0010058*capt - 0.97e-6*capt2) * radian
-	node = (75.779647 + 0.89985*capt + 0.00041*capt2) * radian
-	argp = (130.163833 + 1.408036*capt - 0.0009763*capt2) * radian
-	mrad = 0.7233316
-	anom = 212.603219 + 1.602130154*eday + 0.00128605*capt2
+	ecc := 0.00682069 - 0.00004774*capt + 0.091e-6*capt2
+	incl := (3.393631 + 0.0010058*capt - 0.97e-6*capt2) * radian
+	node := (75.779647 + 0.89985*capt + 0.00041*capt2) * radian
+	argp := (130.163833 + 1.408036*capt - 0.0009763*capt2) * radian
+	mrad := 0.7233316
+	anom := 212.603219 + 1.602130154*eday + 0.00128605*capt2
 	motion = 1.6021687039
 	// Mean anomalies of perturbing planets.
 	v0 := (212.6 + 1.602130154*eday) * radian
@@ -1803,11 +1794,11 @@ func venus() {
 	rad = mrad * (1 - ecc*math.Cos(enom))
 	lambda = vnom + argp
 	// Perturbations in longitude.
-	pturbl := cosadd(venf[0], venc[0], []float64{v0, t0, m0, j0}) * radsec
+	pturbl := cosAdd(venf[0], venc[0], []float64{v0, t0, m0, j0}) * radsec
 	// Perturbations in latitude.
-	pturbb := cosadd(venf[1], venc[1], []float64{v0, t0, j0}) * radsec
+	pturbb := cosAdd(venf[1], venc[1], []float64{v0, t0, j0}) * radsec
 	// Perturbations in log radius vector.
-	pturbr := cosadd(venf[2], venc[2], []float64{v0, t0, m0, j0})
+	pturbr := cosAdd(venf[2], venc[2], []float64{v0, t0, m0, j0})
 	// Reduction to the ecliptic.
 	lambda += pturbl
 	nd := lambda - node
@@ -1829,12 +1820,12 @@ func venus() {
 }
 
 func mars() {
-	ecc = 0.0933129 + 0.000092064*capt
-	incl = (1.850333 - 6.75e-4*capt) * radian
-	node = (48.786442 + 0.770992*capt) * radian
-	argp = (334.218203 + 1.840758*capt + 1.3e-4*capt2) * radian
-	mrad = 1.5236915
-	anom = 319.529425 + 0.5240207666*eday + 1.808e-4*capt2
+	ecc := 0.0933129 + 0.000092064*capt
+	incl := (1.850333 - 6.75e-4*capt) * radian
+	node := (48.786442 + 0.770992*capt) * radian
+	argp := (334.218203 + 1.840758*capt + 1.3e-4*capt2) * radian
+	mrad := 1.5236915
+	anom := 319.529425 + 0.5240207666*eday + 1.808e-4*capt2
 	motion = 0.5240711638
 	anom = math.Mod(anom, 360) * radian
 	enom := anom + ecc*math.Sin(anom)
@@ -1865,12 +1856,12 @@ func mars() {
 }
 
 func jup() {
-	ecc = 0.0483376 + 163e-6*capt
-	incl = (1.30866 - 0.0055*capt) * radian
-	node = (99.43785 + 1.011*capt) * radian
-	argp = (12.71165 + 1.611*capt) * radian
-	mrad = 5.202803
-	anom = 225.22165 + 0.0830912*eday - 0.0484*capt
+	ecc := 0.0483376 + 163e-6*capt
+	incl := (1.30866 - 0.0055*capt) * radian
+	node := (99.43785 + 1.011*capt) * radian
+	argp := (12.71165 + 1.611*capt) * radian
+	mrad := 5.202803
+	anom := 225.22165 + 0.0830912*eday - 0.0484*capt
 	motion = 299.1284 / 3600
 	anom = math.Mod(anom, 360) * radian
 	enom := anom + ecc*math.Sin(anom)
@@ -1897,12 +1888,12 @@ func jup() {
 }
 
 func sat() {
-	ecc = 0.05589 - 0.000347*capt
-	incl = (2.49256 - 0.0044*capt) * radian
-	node = (112.78364 + 0.87306*capt) * radian
-	argp = (91.08897 + 1.95917*capt) * radian
-	mrad = 9.538843
-	anom = 175.4763 + 0.03345972*eday - 0.56527*capt
+	ecc := 0.05589 - 0.000347*capt
+	incl := (2.49256 - 0.0044*capt) * radian
+	node := (112.78364 + 0.87306*capt) * radian
+	argp := (91.08897 + 1.95917*capt) * radian
+	mrad := 9.538843
+	anom := 175.4763 + 0.03345972*eday - 0.56527*capt
 	motion = 120.455 / 3600
 	anom = math.Mod(anom, 360) * radian
 	enom := anom + ecc*math.Sin(anom)
@@ -1954,13 +1945,13 @@ func sat() {
 
 func uran() {
 	cy := (eday - elemUran[0]) / 36525 // Per julian century.
-	mrad = elemUran[1] + elemUran[1+6]*cy
-	ecc = elemUran[2] + elemUran[2+6]*cy
+	mrad := elemUran[1] + elemUran[1+6]*cy
+	ecc := elemUran[2] + elemUran[2+6]*cy
 	cy = cy / 3600 // arcsec/deg per julian century.
-	incl = (elemUran[3] + elemUran[3+6]*cy) * radian
-	node = (elemUran[4] + elemUran[4+6]*cy) * radian
-	argp = (elemUran[5] + elemUran[5+6]*cy)
-	anom = elemUran[6] + elemUran[6+6]*cy - argp
+	incl := (elemUran[3] + elemUran[3+6]*cy) * radian
+	node := (elemUran[4] + elemUran[4+6]*cy) * radian
+	argp := (elemUran[5] + elemUran[5+6]*cy)
+	anom := elemUran[6] + elemUran[6+6]*cy - argp
 	motion = elemUran[6+6] / 36525 / 3600
 	argp *= radian
 	anom = math.Mod(anom, 360) * radian
@@ -2013,13 +2004,13 @@ func uran() {
 
 func nept() {
 	cy := (eday - elemNept[0]) / 36525 // Per julian century.
-	mrad = elemNept[1] + elemNept[1+6]*cy
-	ecc = elemNept[2] + elemNept[2+6]*cy
+	mrad := elemNept[1] + elemNept[1+6]*cy
+	ecc := elemNept[2] + elemNept[2+6]*cy
 	cy = cy / 3600 // arcsec/deg per julian century.
-	incl = (elemNept[3] + elemNept[3+6]*cy) * radian
-	node = (elemNept[4] + elemNept[4+6]*cy) * radian
-	argp = (elemNept[5] + elemNept[5+6]*cy)
-	anom = elemNept[6] + elemNept[6+6]*cy - argp
+	incl := (elemNept[3] + elemNept[3+6]*cy) * radian
+	node := (elemNept[4] + elemNept[4+6]*cy) * radian
+	argp := (elemNept[5] + elemNept[5+6]*cy)
+	anom := elemNept[6] + elemNept[6+6]*cy - argp
 	motion = elemNept[6+6] / 36525 / 3600
 	argp *= radian
 	anom = math.Mod(anom, 360) * radian
@@ -2074,13 +2065,13 @@ func nept() {
 
 func plut() {
 	cy := (eday - elemPlut[0]) / 36525 // Per julian century.
-	mrad = elemPlut[1] + elemPlut[1+6]*cy
-	ecc = elemPlut[2] + elemPlut[2+6]*cy
+	mrad := elemPlut[1] + elemPlut[1+6]*cy
+	ecc := elemPlut[2] + elemPlut[2+6]*cy
 	cy = cy / 3600 // arcsec/deg per julian century.
-	incl = (elemPlut[3] + elemPlut[3+6]*cy) * radian
-	node = (elemPlut[4] + elemPlut[4+6]*cy) * radian
-	argp = (elemPlut[5] + elemPlut[5+6]*cy)
-	anom = elemPlut[6] + elemPlut[6+6]*cy - argp
+	incl := (elemPlut[3] + elemPlut[3+6]*cy) * radian
+	node := (elemPlut[4] + elemPlut[4+6]*cy) * radian
+	argp := (elemPlut[5] + elemPlut[5+6]*cy)
+	anom := elemPlut[6] + elemPlut[6+6]*cy - argp
 	motion = elemPlut[6+6] / 36525 / 3600
 	argp *= radian
 	anom = math.Mod(anom, 360) * radian
@@ -2146,16 +2137,16 @@ func comet() {
 	// 153P/Ikeya–Zhang.
 	t := time.Date(2002, 3, 18, 23, 28, 53, 760000000, time.UTC)
 	elem := cometElem{t: timeToJulian(&t) + 2415020, q: 0.5070601, e: 0.990111, i: 28.12106, w: 34.6666, o: 93.1206}
-	ecc = elem.e
+	ecc := elem.e
 	if ecc > 0.999 { // Can't do hyperbolas.
 		ecc = 0.999
 	}
-	incl = elem.i * radian
-	node = (elem.o + 0.4593) * radian
-	argp = (elem.w + elem.o + 0.4066) * radian
-	mrad = elem.q / (1 - ecc)
+	incl := elem.i * radian
+	node := (elem.o + 0.4593) * radian
+	argp := (elem.w + elem.o + 0.4066) * radian
+	mrad := elem.q / (1 - ecc)
 	motion = 0.01720209895 * math.Sqrt(1/(mrad*mrad*mrad)) / radian
-	anom = (eday - (elem.t - 2415020)) * motion * radian
+	anom := (eday - (elem.t - 2415020)) * motion * radian
 	enom := anom + ecc*math.Sin(anom)
 	for {
 		dele := (anom - enom + ecc*math.Sin(enom)) / (1 - ecc*math.Cos(enom))
@@ -2180,16 +2171,16 @@ func comet() {
 }
 
 func star() {
-	ra = ostar.point[0].ra
-	decl2 = ostar.point[0].decl2
-	semi2 = ostar.point[0].semi2
-	az = ostar.point[0].az
-	el = ostar.point[0].el
-	mag = ostar.point[0].mag
+	ra = oStar.point[0].ra
+	decl2 = oStar.point[0].decl2
+	semi2 = oStar.point[0].semi2
+	az = oStar.point[0].az
+	el = oStar.point[0].el
+	mag = oStar.point[0].mag
 }
 
-func pstime(d float64) {
-	setime(d)
+func psTime(d float64) {
+	seTime(d)
 	semi = 0
 	motion = 0
 	rad = 1e9
@@ -2197,10 +2188,10 @@ func pstime(d float64) {
 	beta = 0
 	helio()
 	geo()
-	fmt.Printf(" %f %f %f %4.0f", lha, nlat, awlong, elev/3.28084)
+	fmt.Printf(" %s %s %s %4.0f", rConv(lha), dConv(nlat), dConv(awlong), elev/metersToFeet)
 }
 
-func setime(d float64) {
+func seTime(d float64) {
 	eday = d + ΔT/86400
 	wlong = awlong + 15*ΔT*radsec
 	capt = eday / 36524.22e0
@@ -2235,17 +2226,14 @@ func nutate() {
 	msun := (358.475833 + 0.9856002669*eday - 0.15e-3*capt2 - 3.33e-6*capt3) * radian
 	noded = (11.250889 + 13.229350449*eday - 3.211e-3*capt2 - 0.33e-6*capt3) * radian
 	dmoon := (350.737486 + 12.1907491914*eday - 1.436e-3*capt2 + 1.89e-6*capt3) * radian
-	node = 259.183275 - 0.0529539222*eday + 2.078e-3*capt2 + 2.22e-6*capt3
-	node *= radian
+	node := (259.183275 - 0.0529539222*eday + 2.078e-3*capt2 + 2.22e-6*capt3) * radian
 	phi = -(17.2327 + 0.01737*capt) * math.Sin(node)
-	phi += sinadd(nutf[0], nutc[0], []float64{node, noded, dmoon, msun})
-	eps = cosadd(nutf[1], nutc[1], []float64{node, noded, dmoon, msun})
-	dphi = sinadd(nutf[2], nutc[2], []float64{node, noded, mnom, dmoon})
-	deps = cosadd(nutf[3], nutc[3], []float64{node, noded, mnom})
+	phi += sinAdd(nutf[0], nutc[0], []float64{node, noded, dmoon, msun})
+	eps = cosAdd(nutf[1], nutc[1], []float64{node, noded, dmoon, msun})
+	dphi := sinAdd(nutf[2], nutc[2], []float64{node, noded, mnom, dmoon})
+	deps := cosAdd(nutf[3], nutc[3], []float64{node, noded, mnom})
 	phi = (phi + dphi) * radsec
 	eps = (eps + deps) * radsec
-	dphi *= radsec
-	deps *= radsec
 	obliq = (23.452294 - 0.0130125*capt - 1.64e-6*capt2 + 0.503e-6*capt3) * radian
 	tobliq = obliq + eps
 	gst = 99.690983 + 360.9856473354*eday + 0.000387*capt2 - 180
@@ -2257,7 +2245,7 @@ func nutate() {
 	gst += phi * math.Cos(obliq)
 }
 
-func setobj(o *obj1) {
+func obj(o *obj1) {
 	*o = obj1{ra: ra, decl2: decl2, semi2: semi2, az: az, el: el, mag: mag}
 }
 
@@ -2267,11 +2255,39 @@ func output(n string, p obj1) {
 	} else {
 		fmt.Printf("%10s", n)
 	}
-	fmt.Printf(" %f %f %9.4f %9.4f %9.4f", p.ra, p.decl2, p.az, p.el, p.semi2)
-	if n == osun.name || n == omoon.name {
+	fmt.Printf(" %s %s %9.4f %9.4f %9.4f", rConv(p.ra), dConv(p.decl2), p.az, p.el, p.semi2)
+	if n == oSun.fname || n == oMoon.fname {
 		fmt.Printf(" %7.4f", p.mag)
 	}
 	fmt.Println()
+}
+
+func rConv(v float64) string {
+	v = math.Mod(v*12/math.Pi+24, 24)
+	h := math.Floor(v)
+	v = math.Mod((v-h)*60, 60)
+	m := math.Floor(v)
+	v = math.Mod((v-m)*60, 60)
+	c := math.Floor(v)
+	return fmt.Sprintf("%2dh%.2dm%.2ds", int(h), int(m), int(c))
+}
+
+func dConv(v float64) string {
+	v = math.Mod(v/radian, 360)
+	if v < 0 {
+		v += 360
+	}
+	sign := '+'
+	if v > 180 {
+		v = 360 - v
+		sign = '-'
+	}
+	h := math.Floor(v)
+	v = math.Mod((v-h)*60, 60)
+	m := math.Floor(v)
+	v = math.Mod((v-m)*60, 60)
+	c := math.Floor(v)
+	return fmt.Sprintf(`%c%.2d°%.2d'%.2d"`, sign, int(h), int(m), int(c))
 }
 
 func dist(o1, o2 obj1) float64 {
@@ -2282,7 +2298,7 @@ func dist(o1, o2 obj1) float64 {
 
 func search() error {
 	for i, o := range objs {
-		if o.name == oshad.name {
+		if o.name == oShad.name {
 			continue
 		}
 		t := rise(*o, -0.833)
@@ -2305,7 +2321,7 @@ func search() error {
 				return err
 			}
 		}
-		if o.name == osun.name {
+		if o.name == oSun.name {
 			for j := range 4 {
 				t = solstice(j)
 				if t >= 0 {
@@ -2331,7 +2347,7 @@ func search() error {
 				{-1.726, "Geminid"},
 			}
 			for _, b := range bettab {
-				t = betcross(b.beta)
+				t = betCross(b.beta)
 				if t >= 0 {
 					err := event(evt{s: fmt.Sprintf("%s meteor shower", b.shower), tim: t, flag: signif})
 					if err != nil {
@@ -2354,7 +2370,7 @@ func search() error {
 				}
 			}
 		}
-		if o.name == omoon.name {
+		if o.name == oMoon.name {
 			for j := range len(o.point) - 2 {
 				if o.point[j].mag > 0.75 && o.point[j+1].mag < 0.25 {
 					err := event(evt{s: "New moon"})
@@ -2382,10 +2398,10 @@ func search() error {
 				}
 			}
 		}
-		if o.name == omerc.name || o.name == ovenus.name {
-			t = float64(melong(*o))
+		if o.name == oMerc.name || o.name == oVenus.name {
+			t = float64(meLong(*o))
 			if t >= 0 {
-				t = rise(*o, 0) - rise(osun, 0)
+				t = rise(*o, 0) - rise(oSun, 0)
 				if t < 0 {
 					t += numPoints
 				}
@@ -2406,14 +2422,14 @@ func search() error {
 			}
 		}
 		for _, p := range objs[i+1:] {
-			if o.name == omoon.name || p.name == omoon.name {
+			if o.name == oMoon.name || p.name == oMoon.name {
 				if err := occult(*o, *p); err != nil {
 					return err
 				}
 				if occ.t3 < 0 {
 					continue
 				}
-				if o.name == osun.name || p.name == omoon.name {
+				if o.name == oSun.name || p.name == oMoon.name {
 					if occ.t1 >= 0 {
 						err := event(evt{s: fmt.Sprintf("Partial eclipse of %s begins at ", o.fname), tim: occ.t1, flag: signif | ptime})
 						if err != nil {
@@ -2454,8 +2470,8 @@ func search() error {
 				}
 				continue
 			}
-			if o.name == osun.name {
-				if p.name != omerc.name && p.name != ovenus.name {
+			if o.name == oSun.name {
+				if p.name != oMerc.name && p.name != oVenus.name {
 					continue
 				}
 				if err := occult(*o, *p); err != nil {
@@ -2492,7 +2508,7 @@ func search() error {
 			return err
 		}
 	}
-	evflush()
+	flushEvents()
 	return nil
 }
 
@@ -2522,8 +2538,8 @@ func solstice(n int) float64 {
 		d3 += math.Pi
 	}
 	var d1, d2 float64
-	for i := range len(osun.point) - 1 {
-		d1, d2 = d2, osun.point[i].ra
+	for i := range len(oSun.point) - 1 {
+		d1, d2 = d2, oSun.point[i].ra
 		if n == 0 {
 			d2 -= math.Pi
 			if d2 < -math.Pi {
@@ -2537,9 +2553,9 @@ func solstice(n int) float64 {
 	return -1
 }
 
-func betcross(b float64) float64 {
-	for i := 1; i < len(osun.point); i++ {
-		d1, d2 := osun.point[i-1].mag, osun.point[i].mag
+func betCross(b float64) float64 {
+	for i := 1; i < len(oSun.point); i++ {
+		d1, d2 := oSun.point[i-1].mag, oSun.point[i].mag
 		if b >= d1 && b < d2 {
 			return float64(i) - (b-d2)/(d1-d2)
 		}
@@ -2547,11 +2563,11 @@ func betcross(b float64) float64 {
 	return -1
 }
 
-func melong(o obj2) int {
+func meLong(o obj2) int {
 	for i := 2; i < len(o.point); i++ {
-		d1 := dist(o.point[i-2], osun.point[i-2])
-		d2 := dist(o.point[i-1], osun.point[i-1])
-		d3 := dist(o.point[i], osun.point[i])
+		d1 := dist(o.point[i-2], oSun.point[i-2])
+		d2 := dist(o.point[i-1], oSun.point[i-1])
+		d3 := dist(o.point[i], oSun.point[i])
 		if d2 >= d1 && d2 >= d3 {
 			return i - 2
 		}
@@ -2560,10 +2576,10 @@ func melong(o obj2) int {
 }
 
 func event(e evt) error {
-	if e.flag&dark > 0 && sunel(e.tim) > -12 {
+	if e.flag&dark > 0 && sunEl(e.tim) > -12 {
 		return nil
 	}
-	if e.flag&light > 0 && sunel(e.tim) < 0 {
+	if e.flag&light > 0 && sunEl(e.tim) < 0 {
 		return nil
 	}
 	if len(events) >= 100 {
@@ -2573,7 +2589,7 @@ func event(e evt) error {
 	return nil
 }
 
-func evflush() {
+func flushEvents() {
 	slices.SortFunc(events, func(e1, e2 evt) int {
 		t1, t2 := e1.tim, e2.tim
 		if e1.flag&signif > 0 {
@@ -2591,14 +2607,15 @@ func evflush() {
 			fmt.Printf("%s\n", e.s)
 		}
 	}
+	events = nil
 }
 
-func sunel(t float64) float64 {
+func sunEl(t float64) float64 {
 	i := int(t)
 	if i < 0 || i > numPoints {
 		return -90
 	}
-	return osun.point[i].el + (t-float64(i))*(osun.point[i+1].el-osun.point[i].el)
+	return oSun.point[i].el + (t-float64(i))*(oSun.point[i+1].el-oSun.point[i].el)
 }
 
 func occult(o1, o2 obj2) error {
@@ -2625,14 +2642,14 @@ func occult(o1, o2 obj2) error {
 	ok = false
 	n := 2880 * iVal / numPoints // 1 min steps.
 	i -= 2
-	set3pt(o1, i, &occ1)
-	set3pt(o2, i, &occ2)
+	pts(o1, i, &occ1)
+	pts(o2, i, &occ2)
 	di := float64(i)
 	x := 0.
 	dx := 2 / n
 	for i = range int(n + 1) {
-		setpt(&occ1, x)
-		setpt(&occ2, x)
+		pt(&occ1, x)
+		pt(&occ2, x)
 		d1, d2 = d2, d3
 		d3 = dist(occ1.act, occ2.act)
 		if i >= 2 && d2 <= d1 && d2 <= d3 {
@@ -2642,7 +2659,7 @@ func occult(o1, o2 obj2) error {
 		x += dx
 	}
 	if !ok {
-		return errors.New("bad 1 \n")
+		return errors.New("bad 1\n")
 	}
 	ok = false
 	if d2 > occ1.act.semi2+occ2.act.semi2+50 {
@@ -2652,20 +2669,20 @@ func occult(o1, o2 obj2) error {
 	x = 0
 	var xo1, xo2 obj2
 	for i = range 3 {
-		setime(day + stepSize*(di+x))
+		seTime(day + stepSize*(di+x))
 		o1.f()
-		setobj(&xo1.point[i])
+		obj(&xo1.point[i])
 		o2.f()
-		setobj(&xo2.point[i])
+		obj(&xo2.point[i])
 		x += 2 * dx
 	}
 	dx /= 60
 	x = 0
-	set3pt(xo1, 0, &occ1)
-	set3pt(xo2, 0, &occ2)
+	pts(xo1, 0, &occ1)
+	pts(xo2, 0, &occ2)
 	for i = range 241 {
-		setpt(&occ1, x)
-		setpt(&occ2, x)
+		pt(&occ1, x)
+		pt(&occ2, x)
 		d1, d2 = d2, d3
 		d3 = dist(occ1.act, occ2.act)
 		if i >= 2 && d2 <= d1 && d2 <= d3 {
@@ -2675,7 +2692,7 @@ func occult(o1, o2 obj2) error {
 		x += 1. / 120
 	}
 	if !ok {
-		return errors.New("bad 2 \n")
+		return errors.New("bad 2\n")
 	}
 	if d2 > occ1.act.semi2+occ2.act.semi2 {
 		return nil
@@ -2692,8 +2709,8 @@ func occult(o1, o2 obj2) error {
 	i = i1
 	x = x1
 	for {
-		setpt(&occ1, x)
-		setpt(&occ2, x)
+		pt(&occ1, x)
+		pt(&occ2, x)
 		d1 = d2
 		d2 = dist(occ1.act, occ2.act)
 		if i != i1 {
@@ -2715,8 +2732,8 @@ func occult(o1, o2 obj2) error {
 	i = i1
 	x = x1
 	for {
-		setpt(&occ1, x)
-		setpt(&occ2, x)
+		pt(&occ1, x)
+		pt(&occ2, x)
 		d1 = d2
 		d2 = dist(occ1.act, occ2.act)
 		if i != i1 {
@@ -2738,7 +2755,7 @@ func occult(o1, o2 obj2) error {
 	return nil
 }
 
-func set3pt(o obj2, i int, oc *occt) {
+func pts(o obj2, i int, oc *occt) {
 	p1, p2, p3 := o.point[i], o.point[i+1], o.point[i+2]
 	oc.del0.ra = p1.ra
 	oc.del0.decl2 = p1.decl2
@@ -2758,7 +2775,7 @@ func set3pt(o obj2, i int, oc *occt) {
 	oc.del2.el = (p1.el + p3.el - 2*p2.el) / 2
 }
 
-func setpt(o *occt, x float64) {
+func pt(o *occt, x float64) {
 	y := x * (x - 1)
 	o.act.ra = o.del0.ra + x*o.del1.ra + y*o.del2.ra
 	o.act.decl2 = o.del0.decl2 + x*o.del1.decl2 + y*o.del2.decl2
@@ -2768,11 +2785,11 @@ func setpt(o *occt, x float64) {
 
 func stars() error {
 	sd := 1000 * radsec
-	lomoon := omoon.point[0].ra - sd
+	lomoon := oMoon.point[0].ra - sd
 	if lomoon < 0 {
 		lomoon += twoPi
 	}
-	himoon := omoon.point[numPoints+1].ra + sd
+	himoon := oMoon.point[numPoints+1].ra + sd
 	if himoon > twoPi {
 		himoon -= twoPi
 	}
@@ -2805,9 +2822,7 @@ func stars() error {
 			return err
 		}
 		alpha = float64(rah) + float64(ram)/60 + ras/3600
-		if wrap && alpha < lomoon && alpha > himoon {
-			continue
-		} else if alpha < lomoon || alpha > himoon {
+		if wrap && (alpha < lomoon && alpha > himoon) || !wrap && (alpha < lomoon || alpha > himoon) {
 			continue
 		}
 		sao = l[:6]
@@ -2835,7 +2850,7 @@ func stars() error {
 		if err != nil {
 			return err
 		}
-		mag, err := strconv.ParseFloat(l[63:67], 64)
+		mag, err := strconv.ParseFloat(strings.TrimSpace(l[63:67]), 64)
 		if err != nil {
 			return err
 		}
@@ -2894,10 +2909,10 @@ func stars() error {
 		if math.Abs(sd) > 0.0183 {
 			continue
 		}
-		for _, p := range ostar.point {
-			setobj(&p)
+		for i := range oStar.point {
+			obj(&oStar.point[i])
 		}
-		if err = occult(omoon, ostar); err != nil {
+		if err = occult(oMoon, oStar); err != nil {
 			return err
 		}
 		if occ.t1 >= 0 || occ.t5 >= 0 {
